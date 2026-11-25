@@ -40,8 +40,25 @@ async function gh(path, opt = {}) {
   });
   if (r.status === 204) return null;
   const d = await r.json().catch(() => null);
+  if (r.status === 401) { SET("fe_token"); throw new Error("Token invalide ou expiré : reconnecte-toi."); }
   if (!r.ok) throw new Error(d?.message || "Erreur " + r.status);
   return d;
+}
+async function ghText(path) {
+  const r = await fetch("https://api.github.com" + path, { headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + LS("fe_token") } });
+  if (!r.ok) throw new Error("Log indisponible (" + r.status + ")");
+  return (await r.text()).replace(/\x1b\[[0-9;]*m/g, "").replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /gm, "");
+}
+const WF = ["name: Deploy", "on:", "  push:", "    branches: [main, master]", "  workflow_dispatch:", "permissions:", "  contents: read", "  pages: write", "  id-token: write",
+  "concurrency:", "  group: pages", "  cancel-in-progress: true", "jobs:", "  deploy:", "    runs-on: ubuntu-latest", "    environment:", "      name: github-pages", "      url: ${{ steps.d.outputs.page_url }}",
+  "    steps:", "      - uses: actions/checkout@v4", "      - uses: actions/configure-pages@v5", "      - uses: actions/upload-pages-artifact@v3", "        with:", "          path: .", "      - id: d", "        uses: actions/deploy-pages@v4", ""].join("\n");
+async function setupAuto(repo) {
+  const m = await gh(`/repos/${repo}`);
+  const path = `/repos/${repo}/contents/.github/workflows/deploy.yml`;
+  let sha; try { sha = (await gh(path + "?ref=" + m.default_branch)).sha; } catch (e) { /* absent */ }
+  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement automatique", content: btoa(WF), branch: m.default_branch, sha } });
+  const body = { build_type: "workflow" };
+  try { await gh(`/repos/${repo}/pages`, { method: "PUT", body }); } catch (e) { await gh(`/repos/${repo}/pages`, { method: "POST", body }); }
 }
 const act = async (fn, ok) => { try { await fn(); ok && toast(ok); } catch (e) { toast(e.message, true); } };
 
@@ -80,7 +97,7 @@ async function vConnect(root) {
   const status = h("div", { class: "fe-meta" }, S.user ? `Connecté en tant que ${S.user.login}` : "Non connecté");
   root.append(h("div", { class: "fe-card" },
     h("div", {}, "Colle un Personal Access Token GitHub avec les droits ", h("b", {}, "repo"), " et ", h("b", {}, "workflow"), ". Il reste uniquement dans ton navigateur (localStorage) et n'est envoyé qu'à api.github.com."),
-    h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Fishease", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token"),
+    h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token"),
     h("div", { class: "fe-bar", style: "margin:0" }, input,
       btn("Se connecter", "log-in", () => act(async () => { SET("fe_token", input.value.trim()); setProfile(await gh("/user")); S.repos = null; status.textContent = "Connecté en tant que " + S.user.login; input.value = ""; }, "Connecté"), "primary"),
       btn("Se déconnecter", "log-out", () => { SET("fe_token"); SET("fe_repo"); S.user = null; S.repos = null; status.textContent = "Non connecté"; toast("Déconnecté"); })),
@@ -92,13 +109,21 @@ async function vProjects(root) {
   const form = newProjectForm(root);
   root.append(h("div", { class: "fe-bar" }, btn("Nouveau projet", "plus", () => form.toggleAttribute("hidden"), "primary")), form, list);
   const rs = (await repos()).filter((r) => match(r.full_name, r.description));
+  const dots = {};
   list.append(...rs.map((r) => h("div", { class: "fe-row" },
-    h("span", { class: "fe-dot " + (r.has_pages ? "ok" : "") }),
+    (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : ""), title: r.has_pages ? "Pages actif" : "Pas de déploiement" })),
     h("div", { class: "fe-main" }, h("b", {}, r.full_name), h("span", { class: "fe-meta" }, `${r.private ? "Privé" : "Public"} · ${r.default_branch} · push ${ago(r.pushed_at)}`)),
     btn("Déployer", "rocket", () => act(() => deploy(r.full_name, r.default_branch))),
     btn("Déploiements", "list", () => { SET("fe_repo", r.full_name); go("Déploiements"); }),
+    btn("Déploiement auto", "git-branch", () => confirm("Ajouter un workflow qui déploie à chaque push sur " + r.default_branch + " ?") && act(async () => { await setupAuto(r.full_name); S.repos = null; }, "Déploiement auto activé : chaque push déploie ton site")),
+    r.has_pages && btn("Copier l'URL", "copy", () => navigator.clipboard.writeText(`https://${r.owner.login}.github.io/${r.name}/`).then(() => toast("URL copiée"))),
     r.has_pages && h("a", { class: "fe-btn", href: `https://${r.owner.login}.github.io/${r.name}/`, target: "_blank", rel: "noopener" }, ic("external-link"), "Visiter"))));
   if (!rs.length) list.append(h("div", { class: "fe-empty" }, "Aucun projet."));
+  rs.slice(0, 12).forEach((r) => gh(`/repos/${r.full_name}/actions/runs?per_page=1`).then((d) => {
+    const x = d.workflow_runs[0]; if (!x) return;
+    dots[r.full_name].className = "fe-dot " + dotOf(x);
+    dots[r.full_name].title = `Dernier run : ${x.status === "completed" ? x.conclusion : "en cours"} (${ago(x.created_at)})`;
+  }).catch(() => {}));
 }
 
 function newProjectForm(root) {
@@ -106,24 +131,28 @@ function newProjectForm(root) {
   const form = h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", {}, "Nouveau site (dépôt + page d'accueil + GitHub Pages)"),
     h("div", { class: "fe-bar", style: "margin:0" }, name, btn("Créer et déployer", "rocket", () => act(async () => {
       const n = name.value.trim(); if (!n) throw new Error("Donne un nom au projet.");
-      const repo = await gh("/user/repos", { method: "POST", body: { name: n, auto_init: true, description: "Créé avec Fishease" } });
-      const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Fishease.</p></body></html>`;
+      const repo = await gh("/user/repos", { method: "POST", body: { name: n, auto_init: true, description: "Créé avec Deploy" } });
+      const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`;
       await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: btoa(unescape(encodeURIComponent(html))), branch: repo.default_branch } });
-      await gh(`/repos/${repo.full_name}/pages`, { method: "POST", body: { source: { branch: repo.default_branch, path: "/" } } });
+      await setupAuto(repo.full_name);
       SET("fe_repo", repo.full_name); S.repos = null; go("Déploiements");
     }, "Site créé, déploiement en cours"), "primary")));
   return form;
 }
 
 async function vRuns(root, filter) {
-  const box = h("div", { class: "fe-list" });
+  const box = h("div", { class: "fe-list" }), stats = h("div", { class: "fe-stats" });
   root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur)),
-    btn("Déployer maintenant", "rocket", () => act(() => deploy(cur()), null), "primary")), box);
+    btn("Déployer maintenant", "rocket", () => act(() => deploy(cur()), null), "primary")), stats, box);
   if (!cur()) return box.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   const repo = cur();
   const load = async () => {
     const d = await gh(`/repos/${repo}/actions/runs?per_page=40`);
     let runs = d.workflow_runs.filter((r) => (!filter || filter(r)) && match(r.display_title, r.head_branch, r.name));
+    const done = d.workflow_runs.filter((r) => r.status === "completed"), ok = done.filter((r) => r.conclusion === "success");
+    stats.replaceChildren(...[["Déploiements", d.total_count], ["Taux de réussite", done.length ? Math.round((ok.length / done.length) * 100) + " %" : "—"],
+      ["Durée moyenne", ok.length ? dur(0, ok.reduce((a, r) => a + (new Date(r.updated_at) - new Date(r.run_started_at)), 0) / ok.length) : "—"]]
+      .map(([k, v]) => h("div", { class: "fe-stat" }, h("b", {}, String(v)), h("span", { class: "fe-meta" }, k))));
     const firstOk = d.workflow_runs.find((r) => r.conclusion === "success")?.id;
     box.replaceChildren(...runs.map((r) => runRow(repo, r, firstOk, load)));
     if (!runs.length) box.append(h("div", { class: "fe-empty" }, "Aucun run."));
@@ -141,7 +170,8 @@ function runRow(repo, r, firstOk, reload) {
     btn("Logs", "terminal", () => act(async () => {
       if (!steps.hidden) return (steps.hidden = true);
       const j = await gh(`/repos/${repo}/actions/runs/${r.id}/jobs`);
-      steps.replaceChildren(...j.jobs.flatMap((jb) => [h("b", {}, jb.name), ...jb.steps.map((s) => h("div", {}, `${s.conclusion === "success" ? "✓" : s.conclusion === "failure" ? "✗" : "…"} ${s.name}`))]),
+      steps.replaceChildren(...j.jobs.flatMap((jb) => { const pre = h("pre", { class: "fe-log", hidden: true }); return [h("b", {}, jb.name,
+        " ", btn("Log complet", "file-text", () => act(async () => { if (!pre.hidden) return (pre.hidden = true); pre.textContent = "Chargement…"; pre.hidden = false; pre.textContent = await ghText(`/repos/${repo}/actions/jobs/${jb.id}/logs`); pre.scrollTop = pre.scrollHeight; }))), pre, ...jb.steps.map((s) => h("div", {}, `${s.conclusion === "success" ? "✓" : s.conclusion === "failure" ? "✗" : "…"} ${s.name}`))]; }),
         h("a", { href: r.html_url, target: "_blank", rel: "noopener" }, "Logs complets sur GitHub ↗"));
       steps.hidden = false;
     })),
@@ -252,5 +282,8 @@ window.Deploy = {
 document.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => Deploy.action(b.dataset.action)));
 let deb;
 document.querySelector(".search-input").addEventListener("input", (e) => { S.q = e.target.value.toLowerCase(); clearTimeout(deb); deb = setTimeout(() => S.cur && render(S.cur), 250); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); document.getElementById("searchbar").click(); }
+});
 if (LS("fe_token")) gh("/user").then(setProfile).catch(() => {});
 })();
