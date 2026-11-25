@@ -1,5 +1,5 @@
 (() => {
-const { h, ic, btn, gh, act, toast, ago, dur, S, SET, cur, icons, deploy, setupAuto, render, picker, match, repos, VIEWS, loading } = window.DP;
+const { h, ic, btn, gh, act, toast, ago, dur, S, SET, cur, icons, deploy, setupAuto, render, go, picker, match, repos, VIEWS, loading } = window.DP;
 const empty = (root) => root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
 const link = (href, label, icon = "external-link") => h("a", { class: "fe-btn", href, target: "_blank", rel: "noopener" }, ic(icon), label);
 const days = (n) => [...Array(n)].map((_, i) => new Date(Date.now() - (n - 1 - i) * 864e5).toISOString().slice(0, 10));
@@ -8,8 +8,8 @@ const perDay = (arr, key, ds, f = () => true) => ds.map((d) => arr.filter((x) =>
 const secs = (r) => Math.round((new Date(r.updated_at) - new Date(r.run_started_at)) / 1000);
 const pagesUrl = async (repo) => (await gh(`/repos/${repo}/pages`).catch(() => null))?.html_url;
 
-function chart({ type = "bar", labels, series, height = 150 }) {
-  const W = 640, H = height, pl = 30, pb = 20, pt = 8, pr = 6, n = labels.length, iw = W - pl - pr, ih = H - pt - pb, bw = iw / n;
+function chart({ type = "bar", labels, series, height = 170 }) {
+  const W = 1100, H = height, pl = 30, pb = 20, pt = 8, pr = 6, n = labels.length, iw = W - pl - pr, ih = H - pt - pb, bw = iw / n;
   const tot = labels.map((_, i) => (type === "bar" ? series.reduce((a, s) => a + s.data[i], 0) : Math.max(...series.map((s) => s.data[i]))));
   const max = Math.max(1, ...tot);
   let g = "";
@@ -50,7 +50,6 @@ async function vOverview(root) {
 
 /* ---- Previews par PR ---- */
 async function vPreviews(root) {
-  root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur))));
   const repo = cur(); if (!repo) return empty(root);
   const m = await gh(`/repos/${repo}`);
   let ready = false;
@@ -98,6 +97,33 @@ async function vLogs(root) {
   draw();
 }
 
+function commitCard(repo, m, path) {
+  const inp = h("input", { type: "file", multiple: true });
+  const msg = h("input", { class: "fe-input", value: "Update via Deploy", style: "flex:1;min-width:220px" });
+  return panel("Commit et push", h("span", { class: "fe-meta" }, `Importe un ou plusieurs fichiers : un seul commit est poussé sur ${m.default_branch}${path ? " dans /" + path : ""}, ce qui déclenche le déploiement.`), inp,
+    h("div", { class: "fe-bar", style: "margin:0" }, msg, btn("Commit et push", "upload", () => act(async () => {
+      const files = [...inp.files]; if (!files.length) throw new Error("Choisis au moins un fichier.");
+      const L = loading("Commit sur " + m.default_branch);
+      try {
+        L.step("Lecture de la branche");
+        const ref = await gh(`/repos/${repo}/git/ref/heads/${m.default_branch}`), head = await gh(`/repos/${repo}/git/commits/${ref.object.sha}`);
+        L.step(`Envoi de ${files.length} fichier(s)`);
+        const tree = [];
+        for (const f of files) {
+          const b64 = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result.split(",")[1]); r.onerror = ko; r.readAsDataURL(f); });
+          const blob = await gh(`/repos/${repo}/git/blobs`, { method: "POST", body: { content: b64, encoding: "base64" } });
+          tree.push({ path: (path ? path + "/" : "") + f.name, mode: "100644", type: "blob", sha: blob.sha });
+        }
+        L.step("Création du commit");
+        const t = await gh(`/repos/${repo}/git/trees`, { method: "POST", body: { base_tree: head.tree.sha, tree } });
+        const c = await gh(`/repos/${repo}/git/commits`, { method: "POST", body: { message: msg.value || "Update via Deploy", tree: t.sha, parents: [ref.object.sha] } });
+        L.step("Push sur GitHub");
+        await gh(`/repos/${repo}/git/refs/heads/${m.default_branch}`, { method: "PATCH", body: { sha: c.sha } });
+        L.close(); go("Historique");
+      } catch (e) { L.close(); throw e; }
+    }, "Commit poussé : déploiement en cours"), "primary")));
+}
+
 /* ---- Fichiers (édition + commit = déploiement) ---- */
 async function vFiles(root) {
   const repo = cur(); if (!repo) return empty(root);
@@ -110,17 +136,16 @@ async function vFiles(root) {
     const msg = h("input", { class: "fe-input", value: "Update " + data.name, style: "flex:1" });
     return root.append(crumbs, ta, h("div", { class: "fe-bar" }, msg, btn("Commit et déployer", "git-commit-horizontal", () => act(async () => {
       await gh(`/repos/${repo}/contents/${path}`, { method: "PUT", body: { message: msg.value, content: btoa(unescape(encodeURIComponent(ta.value))), sha: data.sha, branch: m.default_branch } });
-      if (S.proj) { S.proj.tab = "Déploiements"; render(S.cur); }
+      go("Historique");
     }, "Commit créé : déploiement en cours"), "primary")));
   }
   const items = [...data].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || a.name.localeCompare(b.name)).filter((x) => match(x.name));
   root.append(crumbs, h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Nouveau fichier", "file-plus", () => { const n = prompt("Nom du fichier (ex. about.html)"); if (n) act(async () => { await gh(`/repos/${repo}/contents/${path ? path + "/" : ""}${n}`, { method: "PUT", body: { message: "Add " + n, content: btoa("\n"), branch: m.default_branch } }); render(S.cur); }, "Fichier créé"); })),
-    h("div", { class: "fe-list" }, items.map((x) => h("div", { class: "fe-row fe-click", onclick: () => { S.path = x.path; render(S.cur); } }, ic(x.type === "dir" ? "folder" : "file-text"), h("div", { class: "fe-main" }, h("b", {}, x.name)), h("span", { class: "fe-meta" }, x.type === "dir" ? "" : x.size + " o")))));
+    h("div", { class: "fe-list" }, items.map((x) => h("div", { class: "fe-row fe-click", onclick: () => { S.path = x.path; render(S.cur); } }, ic(x.type === "dir" ? "folder" : "file-text"), h("div", { class: "fe-main" }, h("b", {}, x.name)), h("span", { class: "fe-meta" }, x.type === "dir" ? "" : x.size + " o")))), commitCard(repo, m, path));
 }
 
 /* ---- Analytics ---- */
 async function vAnalytics(root) {
-  root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur))));
   const repo = cur(); if (!repo) return empty(root);
   try {
     const [v, c, ref, pth] = await Promise.all([gh(`/repos/${repo}/traffic/views`), gh(`/repos/${repo}/traffic/clones`), gh(`/repos/${repo}/traffic/popular/referrers`), gh(`/repos/${repo}/traffic/popular/paths`)]);
@@ -133,25 +158,51 @@ async function vAnalytics(root) {
   } catch (e) { root.append(panel("Trafic indisponible", h("span", { class: "fe-meta" }, e.message + " (les stats de trafic demandent les droits d'écriture sur le dépôt)."))); }
 }
 
-/* ---- Dashboard dédié d'un projet ---- */
-const T = { "Aperçu": ["layout-dashboard", vOverview], "Déploiements": ["rocket", VIEWS["Déploiements"]], "Previews": ["git-pull-request", vPreviews], "Logs": ["terminal", vLogs], "Fichiers": ["folder-open", vFiles], "Domaines": ["link-2", VIEWS["Domaines"]], "Variables": ["braces", VIEWS["Variables"]], "Analytics": ["bar-chart-3", vAnalytics] };
-async function vProject(root) {
-  const { repo, tab } = S.proj; SET("fe_repo", repo);
-  const m = await gh(`/repos/${repo}`), url = m.has_pages ? await pagesUrl(repo) : null;
-  const head = h("div", { class: "fe-head" }, btn("", "arrow-left", () => { S.proj = null; S.path = ""; render(S.cur); }),
-    h("div", { class: "fe-main" }, h("b", { class: "fe-title" }, m.name), h("span", { class: "fe-meta" }, `${m.owner.login} · ${m.private ? "privé" : "public"} · ${m.default_branch}`)),
-    btn("Déployer", "rocket", () => act(async () => { await deploy(repo, m.default_branch); S.proj.tab = "Déploiements"; render(S.cur); }), "primary"),
-    btn("Déploiement auto", "git-branch", () => confirm("Installer le workflow (déploiement à chaque push + previews par PR) ?") && act(async () => { const L = loading("Configuration de " + m.name); try { await setupAuto(repo, L); } finally { L.close(); } S.repos = null; render(S.cur); }, "Déploiement auto et previews activés")),
-    url && link(url, "Visiter"), link(m.html_url, "GitHub"));
-  const tabs = h("div", { class: "fe-tabs" }, Object.entries(T).map(([t, [i]]) => h("button", { type: "button", class: "fe-tab" + (t === tab ? " active" : ""), onclick: () => { S.proj.tab = t; S.path = ""; render(S.cur); } }, ic(i), t)));
-  const box = h("div", { class: "fe-tabbox" });
-  root.append(head, tabs, box);
-  S.embed = true; const p = T[tab][1](box); S.embed = false; await p;
-  icons();
+/* ---- Projet sélectionné : sélecteur de la navbar + barre de projet ---- */
+const sw = document.getElementById("project-switcher"), swName = document.getElementById("project-name");
+const short = (r) => (r || "").split("/")[1] || "";
+const cache = {};
+async function getMeta(repo) {
+  const c = cache[repo]; if (c && Date.now() - c.t < 30000) return c.m;
+  const m = await gh(`/repos/${repo}`); m._url = m.has_pages ? await pagesUrl(repo) : null; cache[repo] = { t: Date.now(), m }; return m;
+}
+const syncSwitcher = () => { swName.textContent = cur() ? short(cur()) : "Choisir un projet"; };
+function setProject(repo, label = "Aperçu") { SET("fe_repo", repo); syncSwitcher(); go(label); }
+async function projBar(box, label) {
+  const repo = cur(), m = await getMeta(repo);
+  document.getElementById("content-title").textContent = `/ ${m.name} / ${label}`;
+  box.append(h("div", { class: "fe-head" }, h("div", { class: "fe-main" }, h("b", { class: "fe-title" }, m.name), h("span", { class: "fe-meta" }, `${m.owner.login} · ${m.private ? "privé" : "public"} · ${m.default_branch}`)),
+    btn("Déployer", "rocket", () => act(async () => { await deploy(repo, m.default_branch); go("Historique"); }), "primary"),
+    btn("Déploiement auto", "git-branch", () => confirm("Installer le workflow (déploiement à chaque push + previews par PR) ?") && act(async () => { const L = loading("Configuration de " + m.name); try { await setupAuto(repo, L); } finally { L.close(); } delete cache[repo]; go(label); }, "Déploiement auto et previews activés")),
+    m._url && link(m._url, "Visiter"), link(m.html_url, "GitHub")));
 }
 
-const base = VIEWS["Projets"];
-VIEWS["Projets"] = (box) => { box.parentElement.classList.toggle("in-project", !!S.proj); return S.proj ? vProject(box) : base(box); };
-VIEWS["Environnements"] = vPreviews;
-VIEWS["Analytics"] = vAnalytics;
+let pop;
+const closePop = () => { pop?.remove(); pop = null; sw.setAttribute("aria-expanded", "false"); };
+sw.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  if (pop) return closePop();
+  const r = sw.getBoundingClientRect(), col = document.body.classList.contains("nav-collapsed");
+  const input = h("input", { class: "fe-input", placeholder: "Rechercher un projet…" }), list = h("div", { class: "pop-list" });
+  pop = h("div", { class: "project-pop", style: `left:${col ? r.right + 8 : r.left}px;top:${r.bottom + 6}px` }, input, list,
+    h("button", { type: "button", class: "pop-item", onclick: () => { closePop(); go("Projets"); } }, ic("layout-grid"), h("span", {}, "Tous les projets")));
+  document.body.appendChild(pop); sw.setAttribute("aria-expanded", "true");
+  let all = [];
+  const draw = () => {
+    const q = input.value.toLowerCase();
+    list.replaceChildren(...all.filter((x) => x.full_name.toLowerCase().includes(q)).map((x) => h("button", { type: "button", class: "pop-item" + (x.full_name === cur() ? " active" : ""), onclick: () => { closePop(); setProject(x.full_name); } }, ic("folder-git-2"), h("span", {}, x.name), x.full_name === cur() && ic("check"))));
+    if (!list.children.length) list.append(h("div", { class: "fe-empty" }, "Aucun projet."));
+    icons();
+  };
+  try { all = await repos(); } catch (err) { list.append(h("div", { class: "fe-empty" }, err.message)); }
+  draw(); input.addEventListener("input", draw); input.focus();
+});
+document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target)) closePop(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
+
+Object.assign(VIEWS, { "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
+Object.assign(window.DP, { setProject, projBar, syncSwitcher });
+syncSwitcher();
+// Ouvre les deux premiers groupes (Projet, Déploiements) après l'animation d'arrivée.
+setTimeout(() => [...document.querySelectorAll(".nav-group-title")].slice(0, 2).forEach((b, i) => setTimeout(() => b.getAttribute("aria-expanded") === "false" && b.click(), i * 250)), 2300);
 })();

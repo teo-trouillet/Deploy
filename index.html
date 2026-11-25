@@ -18,6 +18,11 @@
         </div>
 
         <nav aria-label="Navigation principale">
+            <button type="button" class="project-switcher" id="project-switcher" aria-haspopup="listbox" aria-expanded="false" title="Changer de projet">
+                <i data-lucide="folder-git-2"></i>
+                <span id="project-name">Choisir un projet</span>
+                <i data-lucide="chevrons-up-down" class="switcher-chevron"></i>
+            </button>
             <div class="nav-group-first">
                 <a href="#" class="nav-item active">
                     <i data-lucide="house"></i>
@@ -28,66 +33,69 @@
                     <span>Projets</span>
                 </a>
                 <a href="#" class="nav-item">
-                    <i data-lucide="rocket"></i>
-                    <span>Déploiements</span>
-                </a>
-                <a href="#" class="nav-item">
                     <i data-lucide="activity"></i>
                     <span>Activité</span>
                 </a>
             </div>
-
             <div class="nav-group">
-                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-taches">
-                    <i data-lucide="workflow"></i>
-                    <span>Workflows</span>
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-projet">
+                    <i data-lucide="folder-git-2"></i>
+                    <span>Projet</span>
                     <i data-lucide="chevron-right" class="group-chevron"></i>
                 </button>
-                <div class="nav-group-items" id="nav-taches" aria-hidden="true" inert>
+                <div class="nav-group-items" id="nav-projet" aria-hidden="true" inert>
                     <div class="nav-group-items-inner">
                         <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="list"></i>
-                            <span>Tous les runs</span>
+                            <i data-lucide="layout-dashboard"></i>
+                            <span>Aperçu</span>
                         </a>
                         <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="circle-check-big"></i>
-                            <span>Réussis</span>
+                            <i data-lucide="folder-open"></i>
+                            <span>Fichiers</span>
                         </a>
                         <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="loader"></i>
-                            <span>En cours</span>
-                        </a>
-                        <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="circle-x"></i>
-                            <span>Échecs</span>
-                        </a>
-                        <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="ban"></i>
-                            <span>Annulés</span>
+                            <i data-lucide="braces"></i>
+                            <span>Variables</span>
                         </a>
                     </div>
                 </div>
             </div>
 
             <div class="nav-group">
-                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-equipes">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-deploiements">
+                    <i data-lucide="rocket"></i>
+                    <span>Déploiements</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-deploiements" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="history"></i>
+                            <span>Historique</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="git-pull-request"></i>
+                            <span>Previews</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="terminal"></i>
+                            <span>Logs</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-hebergement">
                     <i data-lucide="globe"></i>
                     <span>Hébergement</span>
                     <i data-lucide="chevron-right" class="group-chevron"></i>
                 </button>
-                <div class="nav-group-items" id="nav-equipes" aria-hidden="true" inert>
+                <div class="nav-group-items" id="nav-hebergement" aria-hidden="true" inert>
                     <div class="nav-group-items-inner">
                         <a href="#" class="nav-item nav-item-left">
                             <i data-lucide="link-2"></i>
                             <span>Domaines</span>
-                        </a>
-                        <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="git-pull-request"></i>
-                            <span>Environnements</span>
-                        </a>
-                        <a href="#" class="nav-item nav-item-left">
-                            <i data-lucide="braces"></i>
-                            <span>Variables</span>
                         </a>
                         <a href="#" class="nav-item nav-item-left">
                             <i data-lucide="bar-chart-3"></i>
@@ -281,17 +289,15 @@
         const contentBody = document.querySelector(".content-body");
 
         const pageDescriptions = {
-            "Projets": "Tes dépôts GitHub : déploie-les en un clic ou crée un nouveau site.",
-            "Déploiements": "Historique des déploiements, logs, relance et rollback.",
+            "Projets": "Tes dépôts GitHub : sélectionne-en un pour ouvrir son dashboard.",
             "Activité": "Dernière activité de ton compte GitHub.",
-            "Tous les runs": "Tous les builds et déploiements du projet sélectionné.",
-            "Réussis": "Les déploiements terminés avec succès.",
-            "En cours": "Les builds en cours d'exécution (rafraîchis automatiquement).",
-            "Échecs": "Les builds en échec, avec leurs logs.",
-            "Annulés": "Les builds annulés.",
-            "Domaines": "URL GitHub Pages, domaine personnalisé et HTTPS.",
-            "Environnements": "Pull requests et branches : déploie n'importe quelle branche.",
+            "Aperçu": "Vue d'ensemble du projet sélectionné.",
+            "Fichiers": "Parcours, édite et pousse des fichiers directement sur GitHub.",
             "Variables": "Variables d'environnement utilisables par tes workflows.",
+            "Historique": "Historique des déploiements, logs, relance et rollback.",
+            "Previews": "Une URL de test par pull request.",
+            "Logs": "Journal des déploiements, commits et pull requests.",
+            "Domaines": "URL GitHub Pages, domaine personnalisé et HTTPS.",
             "Analytics": "Trafic des 14 derniers jours.",
             "Connexion GitHub": "Connecte ton compte avec un token personnel.",
             "Sécurité": "Comment ton token est protégé.",

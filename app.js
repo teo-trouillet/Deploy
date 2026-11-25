@@ -101,7 +101,7 @@ async function deploy(repo, ref) {
 }
 
 async function picker(onchange) {
-  if (S.embed) return null;
+  return null; // le projet se choisit via le sélecteur de la navbar
   const list = await repos();
   const sel = h("select", { class: "fe-select", onchange: (e) => { SET("fe_repo", e.target.value); onchange(); } },
     h("option", { value: "" }, "Choisir un projet…"),
@@ -134,7 +134,7 @@ async function vProjects(root) {
     (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : ""), title: r.has_pages ? "Pages actif" : "Pas de déploiement" })),
     h("div", { class: "fe-main" }, h("b", {}, r.full_name), h("span", { class: "fe-meta" }, `${r.private ? "Privé" : "Public"} · ${r.default_branch} · push ${ago(r.pushed_at)}`)),
     btn("Déployer", "rocket", () => act(() => deploy(r.full_name, r.default_branch))),
-    btn("Ouvrir", "layout-dashboard", () => { S.proj = { repo: r.full_name, tab: "Aperçu" }; render(S.cur); }, "primary"),
+    btn("Ouvrir", "layout-dashboard", () => window.DP.setProject(r.full_name), "primary"),
     btn("Déploiement auto", "git-branch", () => confirm("Ajouter un workflow qui déploie à chaque push sur " + r.default_branch + " ?") && act(async () => { await setupAuto(r.full_name); S.repos = null; }, "Déploiement auto activé : chaque push déploie ton site")),
     r.has_pages && btn("Copier l'URL", "copy", () => navigator.clipboard.writeText(`https://${r.owner.login}.github.io/${r.name}/`).then(() => toast("URL copiée"))),
     r.has_pages && h("a", { class: "fe-btn", href: `https://${r.owner.login}.github.io/${r.name}/`, target: "_blank", rel: "noopener" }, ic("external-link"), "Visiter"))));
@@ -161,8 +161,8 @@ function newProjectForm() {
         await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: btoa(unescape(encodeURIComponent(html))), branch: repo.default_branch } });
         await setupAuto(repo.full_name, L);
         L.step("Site en ligne");
-        SET("fe_repo", repo.full_name); S.repos = null; S.proj = { repo: repo.full_name, tab: "Déploiements" }; S.keep = true;
-        await new Promise((r) => setTimeout(r, 700)); L.close(); go("Projets");
+        S.repos = null;
+        await new Promise((r) => setTimeout(r, 700)); L.close(); window.DP.setProject(repo.full_name, "Historique");
       } catch (e) { L.close(); throw e; }
     }), "primary")));
 }
@@ -269,10 +269,11 @@ async function vAnalytics(root) {
     h("div", { class: "fe-bars" }, v.views.map((x) => h("div", { title: `${x.timestamp.slice(0, 10)} : ${x.count}`, style: `height:${(x.count / max) * 100}%` })))));
 }
 
+const PROJ = ["Aperçu", "Historique", "Previews", "Logs", "Fichiers", "Domaines", "Variables", "Analytics"];
 const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t));
 const VIEWS = {
   "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
-  "Tous les runs": (r) => vRuns(r), "Réussis": (r) => vRuns(r, (x) => x.conclusion === "success"),
+  "Historique": (r) => vRuns(r), "Tous les runs": (r) => vRuns(r), "Réussis": (r) => vRuns(r, (x) => x.conclusion === "success"),
   "En cours": (r) => vRuns(r, (x) => x.status !== "completed"), "Échecs": (r) => vRuns(r, (x) => x.conclusion === "failure"),
   "Annulés": (r) => vRuns(r, (x) => x.conclusion === "cancelled"),
   "Domaines": vDomains, "Environnements": vEnvs, "Variables": vVars, "Analytics": vAnalytics, "Connexion GitHub": vConnect,
@@ -292,7 +293,8 @@ async function render(target) {
   try {
     if (label !== "Connexion GitHub" && !LS("fe_token") && !["Sécurité", "Aide"].includes(label))
       box.append(h("div", { class: "fe-card" }, "Connecte ton compte GitHub pour commencer.", btn("Connexion GitHub", "key-round", () => go("Connexion GitHub"), "primary")));
-    else await fn(box);
+    else if (PROJ.includes(label) && !cur()) box.append(h("div", { class: "fe-card" }, "Aucun projet sélectionné.", btn("Choisir un projet", "folder-git-2", () => document.getElementById("project-switcher").click(), "primary")));
+    else { if (PROJ.includes(label) && window.DP.projBar) await window.DP.projBar(box, label); await fn(box); }
   } catch (e) { box.append(h("div", { class: "fe-card" }, "Erreur : " + e.message)); }
   icons();
 }
