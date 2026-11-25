@@ -29,3 +29,41 @@
 .fe-stat { flex: 1; min-width: 130px; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 10px; background: #fff; }
 .fe-stat b { font-size: 1.15rem; font-weight: 600; }
 .fe-log { width: 100%; max-height: 280px; overflow: auto; margin: 6px 0; padding: 10px 12px; border-radius: 8px; background: #111; color: #e6e6e6; font: .7rem/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+
+/* ---- Dashboard de projet, graphiques, logs, chargement ---- */
+.in-project > .fe-desc { display: none; }
+.fe-row:hover { background: #fafafa; }
+.fe-click { cursor: pointer; }
+.fe-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.fe-title { font-size: 1.1rem; font-weight: 600; }
+.fe-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-color); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
+.fe-tab { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--nav-text-color); font: 500 .78rem "Inter", sans-serif; cursor: pointer; white-space: nowrap; }
+.fe-tab svg { width: 14px; height: 14px; stroke-width: 1.5; }
+.fe-tab:hover { color: var(--title-color); }
+.fe-tab.active { color: var(--title-color); border-bottom-color: var(--title-color); }
+.fe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.fe-grid > .fe-card { margin-bottom: 0; }
+.fe-chart { width: 100%; }
+.fe-legend { display: flex; gap: 14px; font-size: .72rem; color: var(--user-role-color); margin-top: 4px; }
+.fe-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.fe-thumb { width: 100%; height: 150px; overflow: hidden; border: 1px solid var(--border-color); border-radius: 8px; position: relative; }
+.fe-thumb iframe { width: 400%; height: 400%; border: 0; transform: scale(.25); transform-origin: 0 0; pointer-events: none; background: #fff; }
+.fe-console { border-radius: 10px; background: #111; color: #d8d8d8; padding: 10px 0; font: .72rem/1.7 ui-monospace, Menlo, monospace; max-height: 520px; overflow: auto; }
+.fe-console .ln { display: flex; gap: 12px; padding: 0 14px; }
+.fe-console .ln:hover { background: #1b1b1b; }
+.fe-console .ln > span:first-child { color: #777; flex: none; }
+.fe-console .ln > b { flex: none; width: 62px; font-weight: 500; color: #9aa7b8; }
+.fe-console .ln.error > span:last-child { color: #ff7b72; }
+.fe-console .ln.ok > span:last-child { color: #7ee2a0; }
+.fe-console .ln.warn > span:last-child { color: #f2cc60; }
+.fe-editor { width: 100%; min-height: 380px; padding: 12px; border: 1px solid var(--border-color); border-radius: 10px; background: #fff; font: .76rem/1.6 ui-monospace, Menlo, monospace; resize: vertical; tab-size: 2; }
+.fe-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(251, 251, 251, .86); backdrop-filter: blur(6px); animation: fade-in .2s ease both; }
+.fe-loader { width: 340px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding: 24px; border: 1px solid var(--border-color); border-radius: 14px; background: #fff; font-family: "Inter", sans-serif; }
+.fe-spin { width: 22px; height: 22px; border: 2px solid var(--border-color); border-top-color: #111; border-radius: 50%; animation: fe-rot .8s linear infinite; }
+@keyframes fe-rot { to { transform: rotate(360deg); } }
+.fe-steps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; font-size: .78rem; color: var(--user-name-color); }
+.fe-steps-list li::before { content: "•"; margin-right: 8px; color: #e0a21b; }
+.fe-steps-list li.done { color: var(--user-role-color); }
+.fe-steps-list li.done::before { content: "✓"; color: #2e9e5b; }
+.fe-editor:focus, .fe-input:focus, .fe-select:focus { outline: 2px solid #7C9BC0; outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .fe-spin, .fe-dot.run { animation-duration: 2s; } }

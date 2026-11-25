@@ -23,6 +23,12 @@ function toast(msg, err) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
+function loading(title) {
+  const ul = h("ul", { class: "fe-steps-list" });
+  const o = h("div", { class: "fe-overlay" }, h("div", { class: "fe-loader" }, h("div", { class: "fe-spin" }), h("b", {}, title), ul));
+  document.body.appendChild(o);
+  return { step(t) { ul.querySelector("li:last-child")?.classList.add("done"); ul.append(h("li", {}, t)); }, close() { o.remove(); } };
+}
 const ago = (d) => {
   const s = (new Date(d) - Date.now()) / 1000, f = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
   for (const [u, n] of [["day", 86400], ["hour", 3600], ["minute", 60]]) if (Math.abs(s) >= n) return f.format(Math.round(s / n), u);
@@ -49,15 +55,28 @@ async function ghText(path) {
   if (!r.ok) throw new Error("Log indisponible (" + r.status + ")");
   return (await r.text()).replace(/\x1b\[[0-9;]*m/g, "").replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /gm, "");
 }
-const WF = ["name: Deploy", "on:", "  push:", "    branches: [main, master]", "  workflow_dispatch:", "permissions:", "  contents: read", "  pages: write", "  id-token: write",
-  "concurrency:", "  group: pages", "  cancel-in-progress: true", "jobs:", "  deploy:", "    runs-on: ubuntu-latest", "    environment:", "      name: github-pages", "      url: ${{ steps.d.outputs.page_url }}",
-  "    steps:", "      - uses: actions/checkout@v4", "      - uses: actions/configure-pages@v5", "      - uses: actions/upload-pages-artifact@v3", "        with:", "          path: .", "      - id: d", "        uses: actions/deploy-pages@v4", ""].join("\n");
-async function setupAuto(repo) {
-  const m = await gh(`/repos/${repo}`);
+const WF = ["name: Deploy", "on:", "  push:", "    branches: [main, master]", "  pull_request:", "    types: [opened, reopened, synchronize, closed]", "  workflow_dispatch:",
+  "concurrency: preview-${{ github.ref }}", "permissions:", "  contents: write", "  pull-requests: write", "jobs:", "  deploy:", "    runs-on: ubuntu-latest", "    steps:",
+  "      - uses: actions/checkout@v4", "      - name: Production", "        if: github.event_name != 'pull_request'", "        uses: JamesIves/github-pages-deploy-action@v4",
+  "        with:", "          folder: .", "          branch: gh-pages", "          clean-exclude: pr-preview/", "          force: false",
+  "      - name: Preview", "        if: github.event_name == 'pull_request'", "        uses: rossjrw/pr-preview-action@v1",
+  "        with:", "          source-dir: .", "          preview-branch: gh-pages", "          umbrella-dir: pr-preview", ""].join("\n");
+async function setupAuto(repo, L) {
+  const m = await gh(`/repos/${repo}`), br = m.default_branch;
+  L && L.step("Ajout du workflow de déploiement et de previews");
   const path = `/repos/${repo}/contents/.github/workflows/deploy.yml`;
-  let sha; try { sha = (await gh(path + "?ref=" + m.default_branch)).sha; } catch (e) { /* absent */ }
-  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement automatique", content: btoa(WF), branch: m.default_branch, sha } });
-  const body = { build_type: "workflow" };
+  let sha; try { sha = (await gh(path + "?ref=" + br)).sha; } catch (e) { /* absent */ }
+  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement auto + previews par PR", content: btoa(WF), branch: br, sha } });
+  L && L.step("Premier build en cours (30 s à 2 min)");
+  if (sha) gh(`/repos/${repo}/actions/workflows/deploy.yml/dispatches`, { method: "POST", body: { ref: br } }).catch(() => {});
+  for (let i = 0; ; i++) {
+    try { await gh(`/repos/${repo}/branches/gh-pages`); break; } catch (e) {
+      if (i > 40) throw new Error("La branche gh-pages n'existe pas : le build a échoué, regarde l'onglet Déploiements.");
+      await new Promise((r) => setTimeout(r, 4000));
+    }
+  }
+  L && L.step("Activation de GitHub Pages");
+  const body = { source: { branch: "gh-pages", path: "/" }, build_type: "legacy" };
   try { await gh(`/repos/${repo}/pages`, { method: "PUT", body }); } catch (e) { await gh(`/repos/${repo}/pages`, { method: "POST", body }); }
 }
 const act = async (fn, ok) => { try { await fn(); ok && toast(ok); } catch (e) { toast(e.message, true); } };
@@ -82,6 +101,7 @@ async function deploy(repo, ref) {
 }
 
 async function picker(onchange) {
+  if (S.embed) return null;
   const list = await repos();
   const sel = h("select", { class: "fe-select", onchange: (e) => { SET("fe_repo", e.target.value); onchange(); } },
     h("option", { value: "" }, "Choisir un projet…"),
@@ -114,7 +134,7 @@ async function vProjects(root) {
     (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : ""), title: r.has_pages ? "Pages actif" : "Pas de déploiement" })),
     h("div", { class: "fe-main" }, h("b", {}, r.full_name), h("span", { class: "fe-meta" }, `${r.private ? "Privé" : "Public"} · ${r.default_branch} · push ${ago(r.pushed_at)}`)),
     btn("Déployer", "rocket", () => act(() => deploy(r.full_name, r.default_branch))),
-    btn("Déploiements", "list", () => { SET("fe_repo", r.full_name); go("Déploiements"); }),
+    btn("Ouvrir", "layout-dashboard", () => { S.proj = { repo: r.full_name, tab: "Aperçu" }; render(S.cur); }, "primary"),
     btn("Déploiement auto", "git-branch", () => confirm("Ajouter un workflow qui déploie à chaque push sur " + r.default_branch + " ?") && act(async () => { await setupAuto(r.full_name); S.repos = null; }, "Déploiement auto activé : chaque push déploie ton site")),
     r.has_pages && btn("Copier l'URL", "copy", () => navigator.clipboard.writeText(`https://${r.owner.login}.github.io/${r.name}/`).then(() => toast("URL copiée"))),
     r.has_pages && h("a", { class: "fe-btn", href: `https://${r.owner.login}.github.io/${r.name}/`, target: "_blank", rel: "noopener" }, ic("external-link"), "Visiter"))));
@@ -126,18 +146,25 @@ async function vProjects(root) {
   }).catch(() => {}));
 }
 
-function newProjectForm(root) {
+function newProjectForm() {
   const name = h("input", { class: "fe-input", placeholder: "nom-du-site" });
-  const form = h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", {}, "Nouveau site (dépôt + page d'accueil + GitHub Pages)"),
+  return h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", {}, "Nouveau site"), h("div", { class: "fe-meta" }, "Crée le dépôt, une page d'accueil, le déploiement auto, les previews par PR et GitHub Pages."),
     h("div", { class: "fe-bar", style: "margin:0" }, name, btn("Créer et déployer", "rocket", () => act(async () => {
-      const n = name.value.trim(); if (!n) throw new Error("Donne un nom au projet.");
-      const repo = await gh("/user/repos", { method: "POST", body: { name: n, auto_init: true, description: "Créé avec Deploy" } });
-      const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`;
-      await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: btoa(unescape(encodeURIComponent(html))), branch: repo.default_branch } });
-      await setupAuto(repo.full_name);
-      SET("fe_repo", repo.full_name); S.repos = null; go("Déploiements");
-    }, "Site créé, déploiement en cours"), "primary")));
-  return form;
+      const n = name.value.trim(); if (!/^[\w.-]+$/.test(n)) throw new Error("Nom invalide (lettres, chiffres, - _ .).");
+      const L = loading("Création de " + n);
+      try {
+        L.step("Création du dépôt GitHub");
+        const repo = await gh("/user/repos", { method: "POST", body: { name: n, auto_init: true, description: "Créé avec Deploy" } });
+        await new Promise((r) => setTimeout(r, 1500));
+        L.step("Ajout de la page d'accueil");
+        const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`;
+        await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: btoa(unescape(encodeURIComponent(html))), branch: repo.default_branch } });
+        await setupAuto(repo.full_name, L);
+        L.step("Site en ligne");
+        SET("fe_repo", repo.full_name); S.repos = null; S.proj = { repo: repo.full_name, tab: "Déploiements" }; S.keep = true;
+        await new Promise((r) => setTimeout(r, 700)); L.close(); go("Projets");
+      } catch (e) { L.close(); throw e; }
+    }), "primary")));
 }
 
 async function vRuns(root, filter) {
@@ -271,7 +298,8 @@ async function render(target) {
 }
 
 window.Deploy = {
-  render: (label, root) => { root.querySelector("p")?.classList.add("fe-desc"); return render({ label, root }); },
+  render: (label, root) => {
+    if (label === "Projets") { if (S.keep) S.keep = false; else S.proj = null; } root.querySelector("p")?.classList.add("fe-desc"); return render({ label, root }); },
   action: (a) => {
     if (a === "new") { go("Projets"); setTimeout(() => document.getElementById("fe-new")?.removeAttribute("hidden"), 300); }
     if (a === "refresh") { S.repos = null; S.cur && render(S.cur); }
@@ -286,4 +314,5 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); document.getElementById("searchbar").click(); }
 });
 if (LS("fe_token")) gh("/user").then(setProfile).catch(() => {});
+window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, render, go, picker, match, dotOf, repos, VIEWS, loading };
 })();
