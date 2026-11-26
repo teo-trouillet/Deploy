@@ -20,11 +20,21 @@ function setCollapsed(collapsed) {
     document.body.classList.toggle("nav-collapsed", collapsed);
 }
 
-const navToggle = document.querySelector(".nav-toggle");
 const toggleNav = () => setCollapsed(!document.body.classList.contains("nav-collapsed"));
-navToggle.addEventListener("click", toggleNav);
-navToggle.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleNav(); }
+
+// Lucide remplace les éléments <i> par des <svg> lors de createIcons().
+// La délégation garantit que le contrôle reste actif même si l'icône est
+// remplacée ou recréée ensuite.
+document.addEventListener("click", (event) => {
+    if (event.target.closest?.(".nav-toggle")) toggleNav();
+});
+
+document.addEventListener("keydown", (event) => {
+    if (!event.target.closest?.(".nav-toggle")) return;
+    if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleNav();
+    }
 });
 
 document.querySelectorAll(".nav-group-title").forEach((button) => {
