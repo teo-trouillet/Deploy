@@ -125,25 +125,25 @@ async function vConnect(root) {
 }
 
 async function vProjects(root) {
-  const list = h("div", { class: "fe-list" });
-  const form = newProjectForm(root);
-  root.append(h("div", { class: "fe-bar" }, btn("Nouveau projet", "plus", () => form.toggleAttribute("hidden"), "primary")), form, list);
-  const rs = (await repos()).filter((r) => match(r.full_name, r.description));
-  const dots = {};
-  list.append(...rs.map((r) => h("div", { class: "fe-row" },
-    (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : ""), title: r.has_pages ? "Pages actif" : "Pas de déploiement" })),
-    h("div", { class: "fe-main" }, h("b", {}, r.full_name), h("span", { class: "fe-meta" }, `${r.private ? "Privé" : "Public"} · ${r.default_branch} · push ${ago(r.pushed_at)}`)),
-    btn("Déployer", "rocket", () => act(() => deploy(r.full_name, r.default_branch))),
-    btn("Ouvrir", "layout-dashboard", () => window.DP.setProject(r.full_name), "primary"),
-    btn("Déploiement auto", "git-branch", () => confirm("Ajouter un workflow qui déploie à chaque push sur " + r.default_branch + " ?") && act(async () => { await setupAuto(r.full_name); S.repos = null; }, "Déploiement auto activé : chaque push déploie ton site")),
-    r.has_pages && btn("Copier l'URL", "copy", () => navigator.clipboard.writeText(`https://${r.owner.login}.github.io/${r.name}/`).then(() => toast("URL copiée"))),
-    r.has_pages && h("a", { class: "fe-btn", href: `https://${r.owner.login}.github.io/${r.name}/`, target: "_blank", rel: "noopener" }, ic("external-link"), "Visiter"))));
-  if (!rs.length) list.append(h("div", { class: "fe-empty" }, "Aucun projet."));
-  rs.slice(0, 12).forEach((r) => gh(`/repos/${r.full_name}/actions/runs?per_page=1`).then((d) => {
+  const form = newProjectForm(root), grid = h("div", { class: "fe-cards" }), side = h("div", { class: "fe-side" });
+  root.append(h("div", { class: "fe-bar" }, btn("Nouveau projet", "plus", () => form.toggleAttribute("hidden"), "primary")), form, h("div", { class: "fe-split" }, side, h("div", {}, h("div", { class: "fe-sec" }, "Projets"), grid)));
+  const all = await repos(), rs = all.filter((r) => match(r.full_name, r.description)), dots = {}, msgs = {};
+  const alerts = h("div", { class: "fe-meta" }, "Vérification…");
+  side.append(h("div", { class: "fe-sec" }, "Utilisation"), h("div", { class: "fe-card" }, [["Projets", all.length], ["Pages actif", all.filter((r) => r.has_pages).length], ["Privés", all.filter((r) => r.private).length]].map(([k, v]) => h("div", { class: "fe-kv" }, h("span", {}, k), h("b", {}, String(v))))),
+    h("div", { class: "fe-sec" }, "Alertes"), h("div", { class: "fe-card fe-center" }, ic("bell"), alerts),
+    h("div", { class: "fe-sec" }, "Projets récents"), h("div", { class: "fe-list" }, all.slice(0, 3).map((r) => h("div", { class: "fe-row fe-click", onclick: () => window.DP.setProject(r.full_name) }, ic("folder-git-2"), h("div", { class: "fe-main" }, h("b", {}, r.name), h("span", { class: "fe-meta" }, "push " + ago(r.pushed_at)))))));
+  grid.append(...rs.map((r) => h("div", { class: "fe-pcard", onclick: () => window.DP.setProject(r.full_name) },
+    h("div", { class: "fe-phead" }, h("span", { class: "fe-avatar" }, r.name[0].toUpperCase()), h("div", { class: "fe-main" }, h("b", {}, r.name), h("span", { class: "fe-meta" }, r.has_pages ? `${r.owner.login}.github.io/${r.name}` : "Pas de déploiement")), (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : "") }))),
+    (msgs[r.full_name] = h("div", { class: "fe-pmsg" }, ic("git-commit-horizontal"), r.description || "—")),
+    h("div", { class: "fe-meta fe-pfoot" }, ic("git-branch"), `${r.full_name} · ${ago(r.pushed_at)}`))));
+  if (!rs.length) grid.append(h("div", { class: "fe-empty" }, "Aucun projet."));
+  icons();
+  let fails = 0;
+  await Promise.all(rs.slice(0, 12).map((r) => gh(`/repos/${r.full_name}/actions/runs?per_page=1`).then((d) => {
     const x = d.workflow_runs[0]; if (!x) return;
-    dots[r.full_name].className = "fe-dot " + dotOf(x);
-    dots[r.full_name].title = `Dernier run : ${x.status === "completed" ? x.conclusion : "en cours"} (${ago(x.created_at)})`;
-  }).catch(() => {}));
+    dots[r.full_name].className = "fe-dot " + dotOf(x); msgs[r.full_name].lastChild.textContent = x.display_title; if (x.conclusion === "failure") fails++;
+  }).catch(() => {})));
+  alerts.textContent = fails ? `${fails} projet(s) avec un dernier déploiement en échec.` : "Aucune alerte.";
 }
 
 function newProjectForm() {
@@ -168,14 +168,15 @@ function newProjectForm() {
 }
 
 async function vRuns(root, filter) {
-  const box = h("div", { class: "fe-list" }), stats = h("div", { class: "fe-stats" });
-  root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur)),
+  const box = h("div", { class: "fe-list" }), stats = h("div", { class: "fe-stats" }), FS = { Tous: () => 1, Réussis: (r) => r.conclusion === "success", "En cours": (r) => r.status !== "completed", Échecs: (r) => r.conclusion === "failure", Annulés: (r) => r.conclusion === "cancelled" };
+  const fsel = h("select", { class: "fe-select", onchange: () => load() }, Object.keys(FS).map((k) => h("option", {}, "Statut : " + k)));
+  root.append(h("div", { class: "fe-bar" }, fsel,
     btn("Déployer maintenant", "rocket", () => act(() => deploy(cur()), null), "primary")), stats, box);
   if (!cur()) return box.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   const repo = cur();
   const load = async () => {
     const d = await gh(`/repos/${repo}/actions/runs?per_page=40`);
-    let runs = d.workflow_runs.filter((r) => (!filter || filter(r)) && match(r.display_title, r.head_branch, r.name));
+    let runs = d.workflow_runs.filter((r) => (!filter || filter(r)) && FS[fsel.value.slice(9)](r) && match(r.display_title, r.head_branch, r.name));
     const done = d.workflow_runs.filter((r) => r.status === "completed"), ok = done.filter((r) => r.conclusion === "success");
     stats.replaceChildren(...[["Déploiements", d.total_count], ["Taux de réussite", done.length ? Math.round((ok.length / done.length) * 100) + " %" : "—"],
       ["Durée moyenne", ok.length ? dur(0, ok.reduce((a, r) => a + (new Date(r.updated_at) - new Date(r.run_started_at)), 0) / ok.length) : "—"]]
@@ -192,8 +193,11 @@ async function vRuns(root, filter) {
 
 function runRow(repo, r, firstOk, reload) {
   const steps = h("div", { class: "fe-steps", hidden: true });
-  const row = h("div", { class: "fe-row" }, h("span", { class: "fe-dot " + dotOf(r) }),
-    h("div", { class: "fe-main" }, h("b", {}, r.display_title), h("span", { class: "fe-meta" }, `${r.name} · ${r.head_branch} · ${r.head_sha.slice(0, 7)} · ${ago(r.created_at)}${r.status === "completed" ? " · " + dur(r.run_started_at, r.updated_at) : " · en cours"}`)),
+  const prev = r.event === "pull_request", name = repo.split("/")[1];
+  const row = h("div", { class: "fe-row fe-dep" }, h("div", { class: "fe-pname" }, h("span", { class: "fe-avatar sm" }, name[0].toUpperCase()), name), h("b", { class: "fe-ell" }, r.display_title),
+    h("span", { class: "fe-scell" }, h("span", { class: "fe-dot " + dotOf(r) }), r.status === "completed" ? `${r.conclusion === "success" ? "Prêt" : r.conclusion} ${dur(r.run_started_at, r.updated_at)}` : "En cours"),
+    h("span", { class: "fe-pill" }, ic(prev ? "eye" : "arrow-up-circle"), prev ? "Preview" : "Production"), h("span", { class: "fe-mono" }, r.head_sha.slice(0, 7)),
+    h("span", { class: "fe-meta fe-pfoot" }, ic("git-branch"), r.head_branch), h("span", { class: "fe-meta" }, ago(r.created_at)),
     btn("Logs", "terminal", () => act(async () => {
       if (!steps.hidden) return (steps.hidden = true);
       const j = await gh(`/repos/${repo}/actions/runs/${r.id}/jobs`);

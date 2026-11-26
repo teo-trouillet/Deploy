@@ -27,21 +27,24 @@ const stat = (k, v) => h("div", { class: "fe-stat" }, h("b", {}, String(v)), h("
 /* ---- Aperçu ---- */
 async function vOverview(root) {
   const repo = cur(), m = await gh(`/repos/${repo}`);
-  const [d, commits, url] = await Promise.all([gh(`/repos/${repo}/actions/runs?per_page=100`), gh(`/repos/${repo}/commits?per_page=100`).catch(() => []), pagesUrl(repo)]);
+  const [d, commits, url, brs, wf] = await Promise.all([gh(`/repos/${repo}/actions/runs?per_page=100`), gh(`/repos/${repo}/commits?per_page=100`).catch(() => []), pagesUrl(repo), gh(`/repos/${repo}/branches?per_page=30`).catch(() => []), gh(`/repos/${repo}/contents/.github/workflows/deploy.yml`).catch(() => null)]);
   const runs = d.workflow_runs, done = runs.filter((r) => r.status === "completed"), ok = done.filter((r) => r.conclusion === "success"), last = runs[0], ds = days(14);
-  root.append(h("div", { class: "fe-stats" }, stat("Déploiements", d.total_count), stat("Taux de réussite", done.length ? Math.round((ok.length / done.length) * 100) + " %" : "—"),
-    stat("Durée moyenne", ok.length ? Math.round(ok.reduce((a, r) => a + secs(r), 0) / ok.length) + " s" : "—"), stat("Dernier déploiement", last ? ago(last.created_at) : "—")));
-  const status = h("span", { class: "fe-meta" }, "Non vérifié");
-  root.append(h("div", { class: "fe-grid" },
-    panel("Production", url ? h("a", { href: url, target: "_blank", rel: "noopener" }, url) : h("span", { class: "fe-meta" }, "Pas encore déployé : utilise « Déploiement auto »."),
-      url && h("div", { class: "fe-thumb" }, h("iframe", { src: url, loading: "lazy", sandbox: "", tabindex: "-1", title: "Aperçu" })),
-      url && h("div", { class: "fe-bar", style: "margin:0" }, btn("Vérifier la disponibilité", "activity", async () => {
-        status.textContent = "Test…"; const t = performance.now();
-        try { await fetch(url, { mode: "no-cors", cache: "no-store" }); status.textContent = `En ligne · ${Math.round(performance.now() - t)} ms`; } catch (e) { status.textContent = "Injoignable"; }
-      }), status)),
-    panel("Dernier déploiement", last ? h("div", { class: "fe-main" }, h("div", { class: "fe-row", style: "padding:0;border:0" }, h("span", { class: "fe-dot " + (last.status !== "completed" ? "run" : last.conclusion === "success" ? "ok" : "fail") }), h("b", {}, last.display_title)),
-      h("span", { class: "fe-meta" }, `${last.head_branch} · ${last.head_sha.slice(0, 7)} · ${last.status === "completed" ? last.conclusion : "en cours"} · ${ago(last.created_at)}`)) : h("span", { class: "fe-meta" }, "Aucun run"),
-      h("span", { class: "fe-meta" }, `${m.default_branch} · ${m.private ? "privé" : "public"} · ${m.open_issues_count} issue(s)/PR ouverte(s)`))));
+  const r14 = runs.filter((r) => Date.now() - new Date(r.created_at) < 14 * 864e5), f14 = r14.filter((r) => r.conclusion === "failure").length;
+  const kv = (k, ...v) => h("div", { class: "fe-kvb" }, h("span", { class: "fe-meta" }, k), h("div", {}, ...v));
+  const host = url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "Pas encore déployé";
+  root.append(h("div", { class: "fe-card fe-prod" },
+    h("div", { class: "fe-prodhead" }, h("b", {}, "Déploiement de production"), h("div", { class: "fe-acts" }, link(m.html_url, "GitHub"), btn("Rollback instantané", "undo-2", () => go("Déploiements")), url && link(url, "Visiter"))),
+    h("div", { class: "fe-prodbody" }, h("div", { class: "fe-thumb" }, url && h("iframe", { src: url, loading: "lazy", sandbox: "", tabindex: "-1", title: "Aperçu" })),
+      h("div", { class: "fe-details" }, kv("Déploiement", host), kv("Domaines", url ? h("a", { href: url, target: "_blank", rel: "noopener" }, host) : "—"),
+        h("div", { class: "fe-two" }, kv("Statut", h("span", { class: "fe-scell" }, h("span", { class: "fe-dot " + (!last ? "" : last.status !== "completed" ? "run" : last.conclusion === "success" ? "ok" : "fail") }), last ? (last.status === "completed" ? (last.conclusion === "success" ? "Prêt" : last.conclusion) : "En cours") : "—")), kv("Créé", last ? ago(last.created_at) : "—")),
+        kv("Source", h("div", { class: "fe-mono" }, m.default_branch), h("div", { class: "fe-meta" }, last ? `${last.head_sha.slice(0, 7)} ${last.display_title}` : "—")))),
+    h("div", { class: "fe-prodfoot" }, h("span", { class: "fe-meta" }, `Pour mettre à jour la production, pousse sur la branche ${m.default_branch}.`), btn("Déploiements", "list-filter", () => go("Déploiements")))));
+  const reco = [["Connecter un dépôt Git", true], ["Ajouter un domaine personnalisé", !!url && !/github\.io/.test(url)], ["Déploiement de preview", !!wf && atob(wf.content.replace(/\n/g, "")).includes("pr-preview")], ["Voir le trafic", false]];
+  root.append(h("div", { class: "fe-grid3" },
+    panel(`Recommandations ${reco.filter((x) => x[1]).length}/${reco.length}`, ...reco.map(([t, v]) => h("div", { class: "fe-reco" + (v ? " done" : "") }, ic(v ? "check" : "circle"), t))),
+    panel("Observabilité · 14 j", stat("Déploiements", r14.length), stat("Échecs", f14), stat("Taux d'erreur", r14.length ? Math.round((f14 / r14.length) * 100) + " %" : "0 %")),
+    panel("Analytics", h("span", { class: "fe-meta" }, "Trafic, pages populaires et clones de ton dépôt."), btn("Voir Analytics", "bar-chart-3", () => go("Analytics")))));
+  root.append(h("div", { class: "fe-sec" }, "Branches actives"), h("div", { class: "fe-list" }, brs.map((b) => h("div", { class: "fe-row" }, ic("git-branch"), h("div", { class: "fe-main" }, h("b", {}, b.name), h("span", { class: "fe-meta" }, b.protected ? "protégée" : "branche")), link(`https://github.com/${repo}/tree/${b.name}`, "Ouvrir")))));
   root.append(panel("Déploiements par jour (14 j)", chart({ labels: ds.map(dl), series: [{ name: "Réussis", color: "#2e9e5b", data: perDay(runs, "created_at", ds, (r) => r.conclusion === "success") }, { name: "Échecs", color: "#d64545", data: perDay(runs, "created_at", ds, (r) => r.conclusion === "failure") }] })));
   const ls = ok.slice(0, 20).reverse();
   if (ls.length) root.append(panel("Durée des builds (secondes)", chart({ type: "line", labels: ls.map((r) => r.head_sha.slice(0, 5)), series: [{ name: "Durée", color: "#111", data: ls.map(secs) }] })));
@@ -201,9 +204,13 @@ document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target)) 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
 
 async function vGeneral(root) {
-  const m = await gh(`/repos/${cur()}`), row = (k, v) => h("div", { class: "fe-row" }, h("div", { class: "fe-main" }, h("span", { class: "fe-meta" }, k), h("b", {}, String(v))));
-  root.append(panel("Général", h("div", { class: "fe-list" }, row("Nom du projet", m.name), row("ID du projet", m.id), row("Propriétaire", m.owner.login), row("Branche de production", m.default_branch), row("Visibilité", m.private ? "Privé" : "Public")),
-    h("div", { class: "fe-bar", style: "margin:0" }, btn("Copier l'ID", "copy", () => navigator.clipboard.writeText(String(m.id)).then(() => toast("ID copié"))), link(m.html_url, "GitHub"))));
+  const m = await gh(`/repos/${cur()}`);
+  const set = (t, desc, body, foot) => h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" }, h("b", {}, t), h("p", { class: "fe-meta" }, desc), body), h("div", { class: "fe-setfoot" }, h("span", { class: "fe-meta" }, foot)));
+  root.append(h("div", { class: "fe-settings" },
+    set("Nom du projet", "Nom du dépôt GitHub qui héberge ce projet.", h("div", { class: "fe-field" }, h("span", {}, `github.com/${m.owner.login}/`), h("input", { class: "fe-input", value: m.name, readonly: true })), "Se renomme depuis GitHub › Settings."),
+    set("ID du projet", "Utilisé pour interagir avec l'API GitHub.", h("div", { class: "fe-field" }, h("code", {}, String(m.id)), btn("Copier", "copy", () => navigator.clipboard.writeText(String(m.id)).then(() => toast("ID copié")))), "Identifiant numérique du dépôt."),
+    set("Branche de production", "Chaque push sur cette branche déclenche un déploiement.", h("div", { class: "fe-field" }, h("code", {}, m.default_branch)), "Modifiable depuis GitHub › Settings › Branches."),
+    set("Visibilité", "Détermine qui peut voir le code du dépôt.", h("div", { class: "fe-field" }, h("code", {}, m.private ? "Privé" : "Public"), link(m.html_url, "Ouvrir sur GitHub")), "Gérée par GitHub.")));
 }
 Object.assign(VIEWS, { "Général": vGeneral, "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
 Object.assign(window.DP, { setProject, projBar, syncSwitcher });
