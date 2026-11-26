@@ -259,3 +259,14 @@ document.querySelectorAll(".nav-item").forEach((i) => i.addEventListener("click"
 
 // Bouton du profil : ouvre la page de connexion GitHub.
 document.getElementById("user-settings")?.addEventListener("click", () => window.DP?.go("Git"));
+
+// Compteurs animés (stats, onglets d'analytics) : de 0 à la valeur en 600 ms.
+new MutationObserver((ms) => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    ms.forEach((m) => m.addedNodes.forEach((n) => n.querySelectorAll?.(".fe-stat b,.fe-mtab b,.fe-kv b").forEach((b) => {
+        const k = b.textContent.match(/^(\d+)(.*)$/); if (!k || +k[1] < 2) return;
+        const to = +k[1], t0 = performance.now();
+        const f = (now) => { const p = Math.min(1, (now - t0) / 600); b.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))) + k[2]; if (p < 1) requestAnimationFrame(f); };
+        requestAnimationFrame(f);
+    })));
+}).observe(contentBody, { childList: true, subtree: true });
