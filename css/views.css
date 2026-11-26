@@ -331,3 +331,354 @@ body { height: 100vh; height: 100dvh; min-height: 0; grid-template-rows: minmax(
 @keyframes fe-up{from{opacity:0;transform:translateY(12px)}}
 @media (prefers-reduced-motion:reduce){.fe-pcard,.fe-pspin{animation:none}.fe-pspin{border-top-color:var(--line)}}
 @media (max-width:800px){.fe-pcard{right:16px;bottom:84px}}
+
+
+/* =========================================================
+   JOURNAUX — refonte complète et isolée du panneau de logs
+   Les règles restent limitées à .fe-logs pour ne pas altérer
+   les autres vues ni les animations globales.
+========================================================= */
+.content-body:has(.fe-logs) {
+    align-items: flex-start;
+    justify-content: flex-start;
+    background: var(--content-color);
+}
+
+.content-body:has(.fe-logs) .app-view {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    padding: 26px clamp(16px, 3vw, 38px) 40px;
+}
+
+.fe-logs {
+    --logs-accent: #5b8def;
+    --logs-muted: var(--user-role-color);
+    display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+    width: 100%;
+    min-width: 0;
+}
+
+.fe-logs > div:last-child {
+    min-width: 0;
+}
+
+.fe-logs .fe-filters {
+    position: sticky;
+    top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    padding: 17px 14px 14px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: var(--surface);
+    box-shadow: 0 2px 8px rgba(12, 18, 28, .035);
+}
+
+.fe-logs .fe-filters > b {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 8px 8px;
+    font-size: .82rem;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    color: var(--title-color);
+    border-bottom: 1px solid var(--line-2);
+}
+
+.fe-logs .fe-filters .fe-sec {
+    margin: 16px 8px 5px;
+    color: var(--user-role-color);
+    font-size: .67rem;
+    font-weight: 700;
+    letter-spacing: .085em;
+    text-transform: uppercase;
+}
+
+.fe-logs .fe-check {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 36px;
+    padding: 7px 9px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--user-name-color);
+    font-size: .77rem;
+    transition: background-color .16s ease, border-color .16s ease;
+}
+
+.fe-logs .fe-check:hover {
+    background: var(--surface-2);
+    border-color: var(--line-2);
+}
+
+.fe-logs .fe-check input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--logs-accent);
+    cursor: pointer;
+}
+
+.fe-logs .fe-check .fe-meta {
+    margin-left: auto;
+    color: var(--user-role-color);
+    font-size: .7rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.fe-logs .fe-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 13px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 2px 8px rgba(12, 18, 28, .025);
+}
+
+.fe-logs .fe-bar .fe-btn {
+    min-height: 32px;
+    border-radius: 8px;
+    font-size: .75rem;
+}
+
+.fe-logs .fe-bar .fe-btn.primary {
+    background: var(--logs-accent);
+    border-color: var(--logs-accent);
+    color: #fff;
+}
+
+.fe-logs .fe-bar .fe-btn.primary:hover {
+    background: #4779d8;
+    border-color: #4779d8;
+}
+
+.fe-logs .fe-console {
+    position: relative;
+    width: 100%;
+    max-height: min(68vh, 680px);
+    min-height: 280px;
+    overflow: auto;
+    padding: 42px 0 12px;
+    border: 1px solid #272d38;
+    border-radius: 13px;
+    background: #101319;
+    color: #d8dee9;
+    box-shadow: 0 8px 28px rgba(12, 18, 28, .09);
+    font: 500 .735rem/1.85 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    scrollbar-color: #3a414e #101319;
+    scrollbar-width: thin;
+}
+
+.fe-logs .fe-console::before {
+    content: "ÉVÉNEMENTS DU DÉPÔT";
+    position: absolute;
+    z-index: 2;
+    inset: 0 0 auto;
+    display: flex;
+    align-items: center;
+    height: 34px;
+    padding: 0 15px 0 72px;
+    border-bottom: 1px solid #272d38;
+    border-radius: 12px 12px 0 0;
+    background:
+        radial-gradient(circle, #f87171 3px, transparent 3.5px) 14px 50% / 12px 12px no-repeat,
+        radial-gradient(circle, #fbbf24 3px, transparent 3.5px) 30px 50% / 12px 12px no-repeat,
+        radial-gradient(circle, #4ade80 3px, transparent 3.5px) 46px 50% / 12px 12px no-repeat,
+        #171b23;
+    color: #8f9bad;
+    font: 650 .62rem/1 "Inter", sans-serif;
+    letter-spacing: .1em;
+}
+
+.fe-logs .fe-console .ln {
+    display: grid;
+    grid-template-columns: 142px 82px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+    padding: 6px 15px 6px 13px;
+    border-left: 2px solid transparent;
+    color: #cbd3df;
+    transition: background-color .12s ease;
+}
+
+.fe-logs .fe-console .ln:hover {
+    background: #191f29;
+}
+
+.fe-logs .fe-console .ln > span:first-child {
+    min-width: 0;
+    color: #788499;
+    white-space: nowrap;
+}
+
+.fe-logs .fe-console .ln > b {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    min-width: 64px;
+    margin: 0;
+    padding: 2px 7px;
+    border: 1px solid #394353;
+    border-radius: 5px;
+    background: #202734;
+    color: #b8c4d6;
+    font: 700 .61rem/1.5 "Inter", sans-serif;
+    letter-spacing: .045em;
+}
+
+.fe-logs .fe-console .ln > b.k-DEPLOY {
+    border-color: rgba(91, 141, 239, .28);
+    background: rgba(91, 141, 239, .13);
+    color: #9bbcff;
+}
+
+.fe-logs .fe-console .ln > b.k-PR {
+    border-color: rgba(192, 132, 252, .28);
+    background: rgba(192, 132, 252, .12);
+    color: #d8b4fe;
+}
+
+.fe-logs .fe-console .ln > b.k-COMMIT {
+    border-color: rgba(52, 211, 153, .22);
+    background: rgba(52, 211, 153, .1);
+    color: #8be6c0;
+}
+
+.fe-logs .fe-console .ln > span:last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #d8dee9;
+}
+
+.fe-logs .fe-console .ln.error {
+    border-left-color: #fb7185;
+}
+
+.fe-logs .fe-console .ln.error > span:last-child {
+    color: #fda4af;
+}
+
+.fe-logs .fe-console .ln.warn {
+    border-left-color: #fbbf24;
+}
+
+.fe-logs .fe-console .ln.warn > span:last-child {
+    color: #fcd58a;
+}
+
+.fe-logs .fe-console .ln.ok {
+    border-left-color: #34d399;
+}
+
+.fe-logs .fe-console .ln.ok > span:last-child {
+    color: #a7f3d0;
+}
+
+.fe-logs .fe-console .ln:has(> span:last-child:first-child) {
+    display: block;
+    padding: 20px;
+    color: #8f9bad;
+    text-align: center;
+}
+
+@media (max-width: 1000px) {
+    .fe-logs {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+    }
+
+    .fe-logs .fe-filters {
+        position: static;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px 8px;
+    }
+
+    .fe-logs .fe-filters > b {
+        grid-column: 1 / -1;
+    }
+
+    .fe-logs .fe-filters .fe-sec {
+        grid-column: 1 / -1;
+        margin-top: 10px;
+    }
+
+    .fe-logs .fe-check {
+        min-width: 0;
+    }
+}
+
+@media (max-width: 620px) {
+    .content-body:has(.fe-logs) .app-view {
+        padding: 16px 12px 28px;
+    }
+
+    .fe-logs .fe-filters {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 12px;
+    }
+
+    .fe-logs .fe-filters .fe-sec {
+        margin-top: 8px;
+    }
+
+    .fe-logs .fe-bar {
+        padding: 9px;
+        gap: 6px;
+    }
+
+    .fe-logs .fe-bar .fe-btn {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    .fe-logs .fe-console {
+        max-height: 62vh;
+        min-height: 240px;
+        font-size: .67rem;
+    }
+
+    .fe-logs .fe-console .ln {
+        grid-template-columns: 1fr auto;
+        gap: 4px 9px;
+        padding: 8px 10px;
+    }
+
+    .fe-logs .fe-console .ln > span:first-child {
+        grid-column: 1;
+        font-size: .62rem;
+    }
+
+    .fe-logs .fe-console .ln > b {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .fe-logs .fe-console .ln > span:last-child {
+        grid-column: 1 / -1;
+        line-height: 1.6;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fe-logs .fe-check,
+    .fe-logs .fe-console .ln {
+        transition: none !important;
+    }
+}
