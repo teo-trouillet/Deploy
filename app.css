@@ -96,8 +96,3 @@
 .pop-item:hover, .pop-item:focus-visible { background: var(--nav-item-active-bg); outline: 0; }
 .pop-item.active { color: var(--title-color); }
 .project-pop > .pop-item { border-top: 1px solid var(--border-color); border-radius: 0 0 8px 8px; margin-top: 2px; }
-/* Navbar façon Vercel : volets principal / paramètres */
-.nav-pane[hidden] { display: none; }
-.nav-back { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; margin-bottom: 4px; border: 0; background: none; font: inherit; font-size: .85rem; color: var(--user-name-color); cursor: pointer; }
-.nav-back svg { width: 16px; height: 16px; }
-.nav-group-last, .nav-group-settings { display: flex; flex-direction: column; }

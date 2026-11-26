@@ -23,7 +23,6 @@
                 <span id="project-name">Choisir un projet</span>
                 <i data-lucide="chevrons-up-down" class="switcher-chevron"></i>
             </button>
-            <div class="nav-pane" id="nav-main">
             <div class="nav-group-first">
                 <a href="#" class="nav-item">
                     <i data-lucide="folder-git-2"></i>
@@ -37,64 +36,85 @@
                     <i data-lucide="rocket"></i>
                     <span>Déploiements</span>
                 </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="terminal"></i>
-                    <span>Logs</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="bar-chart-3"></i>
-                    <span>Analytics</span>
-                </a>
             </div>
-            <div class="nav-group-first">
-                <a href="#" class="nav-item">
-                    <i data-lucide="braces"></i>
-                    <span>Variables d'environnement</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="link-2"></i>
-                    <span>Domaines</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="folder-open"></i>
-                    <span>Fichiers</span>
-                </a>
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-observabilite">
+                    <i data-lucide="eye"></i>
+                    <span>Observabilité</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-observabilite" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="terminal"></i>
+                            <span>Logs</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="bar-chart-3"></i>
+                            <span>Analytics</span>
+                        </a>
+                    </div>
+                </div>
             </div>
-            <div class="nav-group-last">
-                <a href="#" class="nav-item">
-                    <i data-lucide="circle-help"></i>
-                    <span>Support</span>
-                </a>
-                <a href="#" class="nav-item" data-pane="settings">
+
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-projet">
+                    <i data-lucide="folder-git-2"></i>
+                    <span>Projet</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-projet" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="folder-open"></i>
+                            <span>Fichiers</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="braces"></i>
+                            <span>Variables d'environnement</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="link-2"></i>
+                            <span>Domaines</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="layers"></i>
+                            <span>Environnements</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-parametres">
                     <i data-lucide="settings"></i>
                     <span>Paramètres</span>
-                </a>
-            </div>
-            </div>
-            <div class="nav-pane" id="nav-settings" hidden>
-                <button type="button" class="nav-back" id="nav-back"><i data-lucide="chevron-left"></i><span>Paramètres</span></button>
-            <div class="nav-group-settings">
-                <a href="#" class="nav-item">
-                    <i data-lucide="sliders-horizontal"></i>
-                    <span>Général</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="git-branch"></i>
-                    <span>Git</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="layers"></i>
-                    <span>Environnements</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="shield"></i>
-                    <span>Sécurité</span>
-                </a>
-                <a href="#" class="nav-item">
-                    <i data-lucide="activity"></i>
-                    <span>Activité</span>
-                </a>
-            </div>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-parametres" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="sliders-horizontal"></i>
+                            <span>Général</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="git-branch"></i>
+                            <span>Git</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="shield"></i>
+                            <span>Sécurité</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="activity"></i>
+                            <span>Activité</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="circle-help"></i>
+                            <span>Support</span>
+                        </a>
+                    </div>
+                </div>
             </div>
         </nav>
 
@@ -168,11 +188,90 @@
             setCollapsed(!document.body.classList.contains("nav-collapsed"));
         });
 
-        function setPane(name) {
-            document.getElementById("nav-main").hidden = name !== "main";
-            document.getElementById("nav-settings").hidden = name !== "settings";
-        }
-        document.getElementById("nav-back").addEventListener("click", () => setPane("main"));
+        document.querySelectorAll(".nav-group-title").forEach((button) => {
+            const group = button.closest(".nav-group");
+            const panel = document.getElementById(button.getAttribute("aria-controls"));
+
+            if (!group || !panel) return;
+
+            const items = [...panel.querySelectorAll(".nav-item-left")];
+            const stagger = 75;
+
+            panel.style.height = "0px";
+            panel.style.visibility = "hidden";
+
+            items.forEach((item) => {
+                item.style.setProperty("--item-reveal-delay", "0ms");
+            });
+
+            const isOpen = () => group.classList.contains("is-open");
+
+            function setOpen(shouldOpen) {
+                if (shouldOpen === isOpen()) return;
+
+                const currentHeight = panel.getBoundingClientRect().height;
+
+                panel.style.transition = "none";
+                panel.style.height = `${currentHeight}px`;
+                panel.getBoundingClientRect();
+
+                items.forEach((item, index) => {
+                    const delayIndex = shouldOpen
+                        ? index
+                        : items.length - 1 - index;
+
+                    item.style.setProperty(
+                        "--item-reveal-delay",
+                        `${delayIndex * stagger}ms`
+                    );
+                });
+
+                group.classList.toggle("is-open", shouldOpen);
+                button.setAttribute("aria-expanded", String(shouldOpen));
+                panel.setAttribute("aria-hidden", String(!shouldOpen));
+                panel.inert = !shouldOpen;
+
+                if (shouldOpen) {
+                    panel.style.visibility = "visible";
+                    panel.style.pointerEvents = "auto";
+                } else {
+                    panel.style.pointerEvents = "none";
+                }
+
+                requestAnimationFrame(() => {
+                    panel.style.removeProperty("transition");
+
+                    panel.style.height = shouldOpen
+                        ? `${panel.scrollHeight}px`
+                        : "0px";
+                });
+            }
+
+            button.addEventListener("click", () => {
+                // Navbar réduite : on la déplie d'abord (sinon le groupe
+                // s'ouvrirait de façon invisible).
+                if (document.body.classList.contains("nav-collapsed")) {
+                    setCollapsed(false);
+                    setOpen(true);
+                    return;
+                }
+                setOpen(!isOpen());
+            });
+
+            panel.addEventListener("transitionend", (event) => {
+                if (event.target !== panel || event.propertyName !== "height") return;
+
+                panel.style.removeProperty("transition");
+
+                if (group.classList.contains("is-open")) {
+                    panel.style.height = "auto";
+                    panel.style.visibility = "visible";
+                } else {
+                    panel.style.height = "0px";
+                    panel.style.visibility = "hidden";
+                }
+            });
+        });
 
         // Navigation entre les pages : chaque lien affiche sa propre section.
         const contentTitle = document.getElementById("content-title");
@@ -205,7 +304,6 @@
                 );
             });
 
-            setPane(document.querySelector(".nav-item.active")?.closest("#nav-settings") ? "settings" : "main");
             contentBody.replaceChildren();
 
             if (label === "Accueil") {
@@ -233,7 +331,6 @@
         document.querySelectorAll(".nav-item").forEach((item) => {
             item.addEventListener("click", (event) => {
                 event.preventDefault();
-                if (item.dataset.pane) { setPane("settings"); return showPage("Général"); }
                 const label = item.querySelector("span")?.textContent.trim();
                 if (label) showPage(label);
             });
