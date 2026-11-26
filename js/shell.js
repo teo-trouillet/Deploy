@@ -250,3 +250,7 @@ function openPalette() {
     if (D.LS("fe_token")) D.repos().then((rs) => { items = items.concat(rs.map((r) => ({ t: r.full_name, i: "folder-git-2", run: () => D.setProject(r.full_name) }))); draw(); }).catch(() => {});
 }
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); } });
+
+// Mobile : la navbar devient un tiroir.
+document.querySelector(".mobile-menu")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
+document.querySelectorAll(".nav-item").forEach((i) => i.addEventListener("click", () => document.body.classList.remove("nav-open")));

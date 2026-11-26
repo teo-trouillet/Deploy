@@ -297,3 +297,20 @@ body { height: 100vh; height: 100dvh; min-height: 0; grid-template-rows: minmax(
 .fe-danger { border-color: #f0c6c2; } .fe-danger .fe-setbody > b { color: #b3261e; } .fe-danger .fe-setfoot { background: #fff6f5; border-top-color: #f0c6c2; }
 .fe-btn.danger { background: #d64545; border-color: #d64545; color: var(--surface); box-shadow: 0 1px 2px rgba(179, 38, 30, .3); } .fe-btn.danger:hover { background: #c13a3a; } .fe-btn:disabled { opacity: .45; cursor: not-allowed; }
 .fe-lico.danger { background: linear-gradient(145deg, #e25a52, #b3261e); animation: none; }
+
+/* Statuts lisibles sans la couleur : forme différente par état (rond / losange / anneau). */
+.fe-dot.fail{border-radius:2px;transform:rotate(45deg)}
+.fe-dot.run{background:transparent!important;box-shadow:inset 0 0 0 2px #e0a21b}
+/* Mobile */
+.mobile-menu{display:none;border:0;background:none;color:inherit;padding:6px;cursor:pointer}
+@media (max-width:800px){
+  body,body.nav-collapsed{grid-template-columns:minmax(0,1fr)!important}
+  .nav{position:fixed;inset:0 auto 0 0;width:min(86vw,300px);z-index:60;transform:translateX(-102%);transition:transform .3s ease;box-shadow:0 0 40px rgba(0,0,0,.25)}
+  body.nav-open .nav{transform:none}
+  .mobile-menu{display:inline-flex}
+  .right-rail{position:fixed;inset:auto 0 0 0;flex-direction:row;justify-content:space-around;padding:6px;background:var(--nav-color);border-top:1px solid var(--border-color);z-index:40}
+  .right-rail-actions,.right-rail-footer{flex-direction:row}
+  .content-body{padding-bottom:76px}
+  .fe-split,.fe-grid,.fe-grid3,.fe-logs,.fe-prodbody{grid-template-columns:1fr!important}
+  .fe-loader{width:calc(100vw - 32px)}
+}

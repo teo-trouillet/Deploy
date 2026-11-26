@@ -1,12 +1,16 @@
 (() => {
-const LS = (k) => localStorage.getItem(k);
-const SET = (k, v) => (v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v));
+const LS = (k) => { try { return sessionStorage.getItem(k) ?? localStorage.getItem(k); } catch { return null; } };
+const SET = (k, v, keep = true) => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); if (v != null) (keep ? localStorage : sessionStorage).setItem(k, v); } catch { /* stockage indisponible */ } };
 const S = { user: null, repos: null, q: "", timer: null, cur: null, path: "", live: false };
 
 // Base64 UTF-8 sûr (remplace escape/unescape, dépréciés) et sans dépassement de pile.
 const toB64 = (s) => { const b = new TextEncoder().encode(s); let r = ""; for (let i = 0; i < b.length; i += 0x8000) r += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(r); };
 const fromB64 = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), (c) => c.charCodeAt(0)));
 
+const TEMPLATES = {
+  "Page simple": (n) => `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`,
+  "Portfolio": (n) => `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${n}</title><style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:0 auto;padding:3rem 1.2rem;line-height:1.6}h1{margin:0}.p{border:1px solid #ddd;border-radius:12px;padding:1rem;margin:1rem 0}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}.p{border-color:#333}}</style><h1>${n}</h1><p>Développeur web · À propos de moi en deux phrases.</p><h2>Projets</h2><div class="p"><b>Projet 1</b><p>Description courte.</p></div><div class="p"><b>Projet 2</b><p>Description courte.</p></div><h2>Contact</h2><p>vous@exemple.fr</p>`,
+};
 const h = (t, a = {}, ...c) => {
   const e = document.createElement(t);
   for (const [k, v] of Object.entries(a)) {
@@ -56,10 +60,10 @@ function frErr(status, msg) {
 }
 async function gh(path, opt = {}) {
   const t = LS("fe_token");
-  if (!t) throw new Error("Non connecté : Paramètres › Git.");
-  const r = await fetch(path.startsWith("http") ? path : "https://api.github.com" + path, {
+  if (!t && !S.proxy) throw new Error("Non connecté : Paramètres › Git.");
+  const r = await fetch(path.startsWith("http") ? path : (S.proxy ? "/api/gh" : "https://api.github.com") + path, {
     method: opt.method || "GET",
-    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: "Bearer " + t, ...(opt.body ? { "Content-Type": "application/json" } : {}) },
+    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(S.proxy ? { "X-Requested-With": "deploy" } : { Authorization: "Bearer " + t }), ...(opt.body ? { "Content-Type": "application/json" } : {}) },
     body: opt.body ? JSON.stringify(opt.body) : undefined,
   });
   if (r.status === 204) return null;
@@ -73,7 +77,7 @@ async function gh(path, opt = {}) {
   return d;
 }
 async function ghText(path) {
-  const r = await fetch("https://api.github.com" + path, { headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + LS("fe_token") } });
+  const r = await fetch((S.proxy ? "/api/gh" : "https://api.github.com") + path, { headers: { Accept: "application/vnd.github+json", ...(S.proxy ? {} : { Authorization: "Bearer " + LS("fe_token") }) } });
   if (r.status === 401) { SET("fe_token"); throw new Error("Token invalide ou expiré : reconnecte-toi."); }
   if (!r.ok) throw new Error("Log indisponible (" + r.status + ")");
   return (await r.text()).replace(/\x1b\[[0-9;]*m/g, "").replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /gm, "");
@@ -152,7 +156,12 @@ async function setupAuto(repo, L) {
 }
 const act = async (fn, ok) => { try { await fn(); ok && toast(ok); } catch (e) { toast(e.message, true); } };
 
-const repos = async (force) => (!S.repos || force ? (S.repos = await gh("/user/repos?sort=pushed&per_page=100&affiliation=owner,collaborator")) : S.repos);
+const repos = async (force) => {
+  if (S.repos && !force) return S.repos;
+  let all = [];
+  for (let pg = 1; pg <= 5; pg++) { const r = await gh(`/user/repos?sort=pushed&per_page=100&affiliation=owner,collaborator&page=${pg}`); all = all.concat(r); if (r.length < 100) break; }
+  return (S.repos = all);
+};
 const cur = () => LS("fe_repo");
 
 function setProfile(u) {
@@ -177,15 +186,15 @@ const match = (...s) => !S.q || s.join(" ").toLowerCase().includes(S.q);
 /* ---------- Vues ---------- */
 async function vConnect(root) {
   if (LS("fe_token") && !S.user) try { setProfile(await gh("/user")); } catch (e) { /* token invalide */ }
-  const u = S.user, input = h("input", { class: "fe-input", type: "password", placeholder: "ghp_… ou github_pat_…", autocomplete: "off" });
+  const u = S.user, input = h("input", { class: "fe-input", type: "password", placeholder: "ghp_… ou github_pat_…", autocomplete: "off" }), remember = h("input", { type: "checkbox" });
   const set = (t, desc, foot, ...body) => h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" }, h("b", {}, t), h("p", { class: "fe-meta" }, desc), ...body), foot && h("div", { class: "fe-setfoot fe-footrow" }, ...foot));
-  const connect = () => act(async () => { SET("fe_token", input.value.trim()); setProfile(await gh("/user")); S.repos = null; render(S.cur); }, "Connecté");
+  const connect = () => act(async () => { SET("fe_token", input.value.trim(), remember.checked); setProfile(await gh("/user")); S.repos = null; render(S.cur); }, "Connecté");
   root.append(h("div", { class: "fe-settings" },
     set("Compte GitHub", "Le compte utilisé par Deploy pour lire et modifier tes dépôts.", null,
       h("div", { class: "fe-conn" }, u ? h("img", { class: "fe-uava", src: u.avatar_url, alt: "" }) : h("span", { class: "fe-uava" }, ic("user")), h("div", { class: "fe-main" }, h("b", {}, u ? u.login : "Non connecté"), h("span", { class: "fe-meta" }, u ? "Connecté à GitHub" : "Ajoute un token pour commencer")), h("span", { class: "fe-pill " + (u ? "prod" : "") }, u ? "Actif" : "Hors ligne")),
-      u && h("div", { class: "fe-bar", style: "margin:0" }, btn("Se déconnecter", "log-out", () => { SET("fe_token"); SET("fe_repo"); S.user = null; S.repos = null; toast("Déconnecté"); render(S.cur); }))),
+      u && h("div", { class: "fe-bar", style: "margin:0" }, btn("Se déconnecter", "log-out", () => { if (S.proxy) { fetch("/auth/logout", { method: "POST", headers: { "X-Requested-With": "deploy" } }).catch(() => {}); S.proxy = false; } SET("fe_token"); SET("fe_repo"); S.user = null; S.repos = null; toast("Déconnecté"); render(S.cur); }))),
     set("Personal Access Token", "Colle un token GitHub. Il reste uniquement dans ton navigateur.", [h("span", { class: "fe-meta" }, "Droits requis : repo, workflow (delete_repo seulement pour supprimer un projet)."), h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token")],
-      h("div", { class: "fe-field" }, input, btn("Se connecter", "log-in", connect, "primary")))));
+      h("div", { class: "fe-field" }, input, btn("Se connecter", "log-in", connect, "primary"), h("label", { class: "fe-meta" }, remember, " Rester connecté sur cet appareil")))));
   input.addEventListener("keydown", (e) => e.key === "Enter" && connect());
 }
 
@@ -212,9 +221,9 @@ async function vProjects(root) {
 }
 
 function newProjectForm() {
-  const name = h("input", { class: "fe-input", placeholder: "nom-du-site" });
+  const name = h("input", { class: "fe-input", placeholder: "nom-du-site" }), tpl = h("select", { class: "fe-select", "aria-label": "Modèle" }, Object.keys(TEMPLATES).map((k) => h("option", {}, k)));
   return h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", { class: "fe-herotitle" }, "Crée ton prochain projet"), h("div", { class: "fe-meta" }, "Un nom, un clic : dépôt GitHub, page d'accueil, déploiement auto, previews par PR et GitHub Pages."),
-    h("div", { class: "fe-bar", style: "margin:0" }, name, btn("Créer et déployer", "rocket", () => act(async () => {
+    h("div", { class: "fe-bar", style: "margin:0" }, name, tpl, btn("Créer et déployer", "rocket", () => act(async () => {
       const n = name.value.trim(); if (!/^[\w.-]+$/.test(n)) throw new Error("Nom invalide (lettres, chiffres, - _ .).");
       const L = loading("Création de " + n);
       try {
@@ -222,7 +231,7 @@ function newProjectForm() {
         const repo = await gh("/user/repos", { method: "POST", body: { name: n, auto_init: true, description: "Créé avec Deploy" } });
         await new Promise((r) => setTimeout(r, 1500));
         L.step("Ajout de la page d'accueil");
-        const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`;
+        const html = TEMPLATES[tpl.value](n);
         await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: toB64(html), branch: repo.default_branch } });
         await setupAuto(repo.full_name, L);
         L.step("Site en ligne"); L.done();
@@ -232,15 +241,25 @@ function newProjectForm() {
     }), "primary")));
 }
 
+const seen = {};
+function watchFailures(repo, runs) {
+  for (const r of runs) {
+    const prev = seen[r.id]; seen[r.id] = r.status;
+    if (prev && prev !== "completed" && r.status === "completed" && r.conclusion === "failure") {
+      toast(`Échec du déploiement : ${repo.split("/")[1]} (${r.head_branch})`, true);
+      if ("Notification" in window && Notification.permission === "granted") new Notification("Déploiement en échec", { body: `${repo} · ${r.display_title}` });
+    }
+  }
+}
 async function vRuns(root, filter) {
   const box = h("div", { class: "fe-list" }), stats = h("div", { class: "fe-stats" }), FS = { Tous: () => 1, Réussis: (r) => r.conclusion === "success", "En cours": (r) => r.status !== "completed", Échecs: (r) => r.conclusion === "failure", Annulés: (r) => r.conclusion === "cancelled" };
   const fsel = h("select", { class: "fe-select chip", onchange: () => load() }, Object.keys(FS).map((k) => h("option", {}, "Statut : " + k)));
-  root.append(h("div", { class: "fe-bar" }, fsel,
+  root.append(h("div", { class: "fe-bar" }, fsel, "Notification" in window && btn("Alertes d'échec", "bell", () => Notification.requestPermission().then((r) => toast(r === "granted" ? "Alertes activées (onglet ouvert)" : "Notifications refusées", r !== "granted"))),
     btn("Déployer maintenant", "rocket", () => act(() => deploy(cur()), null), "primary")), stats, box);
   if (!cur()) return box.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   const repo = cur();
   const load = async () => {
-    const d = await gh(`/repos/${repo}/actions/runs?per_page=40`);
+    const d = await gh(`/repos/${repo}/actions/runs?per_page=40`); watchFailures(repo, d.workflow_runs);
     let runs = d.workflow_runs.filter((r) => (!filter || filter(r)) && FS[fsel.value.slice(9)](r) && match(r.display_title, r.head_branch, r.name));
     const done = d.workflow_runs.filter((r) => r.status === "completed"), ok = done.filter((r) => r.conclusion === "success");
     stats.replaceChildren(...[["Déploiements", d.total_count], ["Taux de réussite", done.length ? Math.round((ok.length / done.length) * 100) + " %" : "—"],
@@ -300,6 +319,7 @@ async function vDomains(root) {
       const m = await gh(`/repos/${repo}`); await gh(`/repos/${repo}/pages`, { method: "POST", body: { source: { branch: m.default_branch, path: "/" } } }); render(S.cur);
     }, "Pages activé"), "primary")));
   }
+  if (p.cname) root.append(dnsCard(p.cname, repo.split("/")[0]));
   const cname = h("input", { class: "fe-input", placeholder: "www.mondomaine.fr", value: p.cname || "" });
   root.append(h("div", { class: "fe-card" },
     h("div", {}, h("b", {}, "URL : "), h("a", { href: p.html_url, target: "_blank", rel: "noopener" }, p.html_url), ` · statut ${p.status || "—"}`),
@@ -307,7 +327,40 @@ async function vDomains(root) {
       btn(p.https_enforced ? "HTTPS forcé ✓" : "Forcer HTTPS", "lock", () => act(() => gh(`/repos/${repo}/pages`, { method: "PUT", body: { https_enforced: true } }), "HTTPS forcé")))));
 }
 
+let sodiumP;
+const loadSodium = () => (sodiumP ||= new Promise((ok, ko) => {
+  window.sodium = { onload: ok };
+  document.head.appendChild(h("script", { src: "https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/browsers/sodium.js", onerror: () => { sodiumP = null; ko(new Error("Impossible de charger libsodium (réseau ou bloqueur de contenu).")); } }));
+}));
+async function sealSecret(repo, name, value) {
+  const sodium = await loadSodium(), V = sodium.base64_variants.ORIGINAL;
+  const k = await gh(`/repos/${repo}/actions/secrets/public-key`);
+  const enc = sodium.to_base64(sodium.crypto_box_seal(sodium.from_string(value), sodium.from_base64(k.key, V)), V);
+  await gh(`/repos/${repo}/actions/secrets/${name}`, { method: "PUT", body: { encrypted_value: enc, key_id: k.key_id } });
+}
+function secretsCard(repo) {
+  const n = h("input", { class: "fe-input", placeholder: "NOM_DU_SECRET" }), v = h("input", { class: "fe-input", type: "password", placeholder: "valeur", autocomplete: "off" });
+  return h("div", { class: "fe-card" }, h("b", {}, "Secrets"), h("span", { class: "fe-meta" }, "Chiffrés dans ton navigateur (libsodium) avant envoi à GitHub ; illisibles ensuite. Utilisables dans les workflows via ${{ secrets.NOM }}."),
+    h("div", { class: "fe-bar", style: "margin:0" }, n, v, btn("Enregistrer le secret", "lock", () => act(async () => {
+      if (!/^[A-Z_][A-Z0-9_]*$/.test(n.value.trim()) || !v.value) throw new Error("Nom en MAJUSCULES_ET_TIRETS_BAS et valeur requis.");
+      await sealSecret(repo, n.value.trim(), v.value); v.value = "";
+    }, "Secret enregistré"), "primary")));
+}
+// Vérification DNS via DNS-over-HTTPS (dns.google, CORS ouvert) : aucun serveur requis.
+async function dnsCheck(domain, owner) {
+  const q = async (t, code) => ((await (await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${t}`)).json()).Answer || []).filter((x) => x.type === code).map((x) => x.data.replace(/\.$/, ""));
+  const target = `${owner}.github.io`.toLowerCase(), ips = ["185.199.108.153", "185.199.109.153", "185.199.110.153", "185.199.111.153"];
+  const cn = await q("CNAME", 5); if (cn.length) return { ok: cn.some((x) => x.toLowerCase() === target), target, records: cn };
+  const ip = await q("A", 1); return { ok: ip.length > 0 && ip.every((x) => ips.includes(x)), target, records: ip };
+}
+function dnsCard(domain, owner) {
+  return h("div", { class: "fe-card" }, h("b", {}, "Vérification DNS · " + domain), btn("Vérifier maintenant", "globe", () => act(async () => {
+    const d = await dnsCheck(domain, owner);
+    toast(d.ok ? "DNS correct ✓" : `DNS incorrect : attendu CNAME ${d.target} (trouvé : ${d.records.join(", ") || "rien"})`, !d.ok);
+  })));
+}
 async function vVars(root) {
+  if (cur()) root.append(secretsCard(cur()));
   const repo = cur(); if (!repo) return root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   const d = await gh(`/repos/${repo}/actions/variables?per_page=100`);
   const n = h("input", { class: "fe-input", placeholder: "NOM" }), v = h("input", { class: "fe-input", placeholder: "valeur" });
@@ -325,7 +378,7 @@ const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t
 const VIEWS = {
   "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
   "Domaines": vDomains, "Variables d'environnement": vVars, "Git": vConnect,
-  "Sécurité": info("Ton token n'est stocké que dans le localStorage de ce navigateur et n'est envoyé qu'à api.github.com. Utilise un token à durée limitée et révoque-le sur GitHub si besoin."),
+  "Sécurité": info("Par défaut ton token reste dans la session du navigateur (effacé à la fermeture) ; « Rester connecté » le garde dans le localStorage. Il n'est envoyé qu'à api.github.com. Utilise un token à durée limitée et révoque-le sur GitHub si besoin."),
   "Support": info("1) Paramètres › Git : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : journaux, relance, restauration."),
 };
 
@@ -334,7 +387,7 @@ function onboarding() {
   return h("div", { class: "fe-card fe-onb" }, h("b", { class: "fe-herotitle" }, "Bienvenue sur Deploy"), h("span", { class: "fe-meta" }, "Trois étapes pour mettre ton premier site en ligne."),
     h("ol", { class: "fe-onb-list" },
       step(1, "Crée un token GitHub", "Droits repo et workflow, avec une expiration courte.", h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token")),
-      step(2, "Colle-le dans Deploy", "Il reste uniquement dans ton navigateur.", btn("Ouvrir Paramètres › Git", "key-round", () => go("Git"), "primary")),
+      step(2, "Colle-le dans Deploy", "Il reste uniquement dans ton navigateur.", S.oauth && h("a", { class: "fe-btn primary", href: "/auth/login" }, ic("github"), "Ou : se connecter avec GitHub (OAuth)"), btn("Ouvrir Paramètres › Git", "key-round", () => go("Git"), "primary")),
       step(3, "Choisis ou crée un projet", "Un nom suffit : dépôt, workflow et GitHub Pages sont configurés pour toi.")));
 }
 
@@ -349,7 +402,7 @@ async function render(target) {
   root.append(box);
   const sk = h("div", { class: "fe-skel", "aria-hidden": "true" }, h("i"), h("i"), h("i")); box.append(sk);
   try {
-    if (label !== "Git" && !LS("fe_token") && !["Sécurité"].includes(label))
+    if (label !== "Git" && !LS("fe_token") && !S.proxy && !["Sécurité"].includes(label))
       box.append(onboarding());
     else if (PROJ.includes(label) && !cur()) box.append(h("div", { class: "fe-card" }, "Aucun projet sélectionné.", btn("Choisir un projet", "folder-git-2", () => document.getElementById("project-switcher").click(), "primary")));
     else { if (PROJ.includes(label) && window.DP.projBar) await window.DP.projBar(box, label); await fn(box); }
@@ -373,6 +426,12 @@ document.querySelector(".search-input").addEventListener("input", (e) => { S.q =
 document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); document.getElementById("searchbar").click(); }
 });
-if (LS("fe_token")) gh("/user").then(setProfile).catch(() => {});
+// Backend optionnel : si /api/me répond, le token reste côté serveur (OAuth) ; sinon mode « token local ».
+const localLogin = () => LS("fe_token") && gh("/user").then(setProfile).catch(() => {});
+(location.hostname.endsWith(".github.io") || location.protocol === "file:" ? Promise.reject() : fetch("/api/me")).then((r) => r.json().then((d) => {
+  S.backend = !!d.backend; S.oauth = !!d.oauth;
+  if (r.ok) { S.proxy = true; return gh("/user").then(setProfile).then(() => S.cur && render(S.cur)); }
+  return localLogin();
+})).catch(localLogin);
 window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, render, go, toB64, fromB64, match, dotOf, repos, VIEWS, loading };
 })();

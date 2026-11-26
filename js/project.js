@@ -296,7 +296,7 @@ Object.assign(VIEWS, { "Publications": vReleases, "Tags": vTags, "Changelog": (r
 async function vSecurity(root) {
   const item = (icon, t, d) => h("div", { class: "fe-secitem" }, h("span", { class: "fe-iconbox" }, ic(icon)), h("div", {}, h("b", {}, t), h("p", { class: "fe-meta" }, d)));
   root.append(h("div", { class: "fe-settings" }, h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" },
-    item("hard-drive", "Token stocké localement", "Ton token reste dans le localStorage de ce navigateur. Il n'est jamais envoyé à un serveur de Deploy."),
+    item("hard-drive", "Token stocké localement", "Il reste dans le navigateur (session, ou localStorage si « Rester connecté »). Il n'est jamais envoyé à un serveur de Deploy."),
     item("send", "Envoyé uniquement à GitHub", "Les requêtes partent directement vers api.github.com, rien d'autre."),
     item("clock", "Préfère un token à durée limitée", "Choisis une expiration courte quand tu le crées : il se désactive tout seul."),
     item("shield-check", "Droits minimaux", "repo et workflow suffisent. delete_repo n'est utile que pour supprimer un projet.")),
