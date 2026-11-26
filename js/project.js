@@ -1,5 +1,6 @@
 (() => {
-const { h, ic, btn, gh, act, toast, ago, dur, S, SET, cur, icons, deploy, setupAuto, render, go, picker, match, repos, VIEWS, loading } = window.DP;
+const { h, ic, btn, gh, act, toast, ago, dur, S, SET, cur, icons, deploy, setupAuto, render, go, toB64, fromB64, match, repos, VIEWS, loading } = window.DP;
+const encPath = (x) => x.split("/").map(encodeURIComponent).join("/");
 const empty = (root) => root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
 const link = (href, label, icon = "external-link") => h("a", { class: "fe-btn", href, target: "_blank", rel: "noopener" }, ic(icon), label);
 const days = (n) => [...Array(n)].map((_, i) => new Date(Date.now() - (n - 1 - i) * 864e5).toISOString().slice(0, 10));
@@ -39,7 +40,7 @@ async function vOverview(root) {
         h("div", { class: "fe-two" }, kv("Statut", h("span", { class: "fe-scell" }, h("span", { class: "fe-dot " + (!last ? "" : last.status !== "completed" ? "run" : last.conclusion === "success" ? "ok" : "fail") }), last ? (last.status === "completed" ? (last.conclusion === "success" ? "Prêt" : last.conclusion) : "En cours") : "—")), kv("Créé", last ? ago(last.created_at) : "—")),
         kv("Source", h("div", { class: "fe-mono" }, m.default_branch), h("div", { class: "fe-meta" }, last ? `${last.head_sha.slice(0, 7)} ${last.display_title}` : "—")))),
     h("div", { class: "fe-prodfoot" }, h("span", { class: "fe-meta" }, `Pour mettre à jour la production, pousse sur la branche ${m.default_branch}.`), btn("Déploiements", "list-filter", () => go("Déploiements")))));
-  const reco = [["Connecter un dépôt Git", true], ["Ajouter un domaine personnalisé", !!url && !/github\.io/.test(url)], ["Déploiement de preview", !!wf && atob(wf.content.replace(/\n/g, "")).includes("pr-preview")], ["Voir le trafic", false]];
+  const reco = [["Connecter un dépôt Git", true], ["Ajouter un domaine personnalisé", !!url && !/github\.io/.test(url)], ["Déploiement de preview", !!wf && fromB64(wf.content).includes("pr-preview")], ["Voir le trafic", false]];
   root.append(h("div", { class: "fe-grid3" },
     panel(`Recommandations ${reco.filter((x) => x[1]).length}/${reco.length}`, ...reco.map(([t, v]) => h("div", { class: "fe-reco" + (v ? " done" : "") }, ic(v ? "check" : "circle"), t))),
     panel("Observabilité · 14 j", stat("Déploiements", r14.length), stat("Échecs", f14), stat("Taux d'erreur", r14.length ? Math.round((f14 / r14.length) * 100) + " %" : "0 %")),
@@ -57,7 +58,7 @@ async function vPreviews(root) {
   const repo = cur(); if (!repo) return empty(root);
   const m = await gh(`/repos/${repo}`);
   let ready = false;
-  try { ready = atob((await gh(`/repos/${repo}/contents/.github/workflows/deploy.yml`)).content.replace(/\n/g, "")).includes("pr-preview"); } catch (e) { /* absent */ }
+  try { ready = fromB64((await gh(`/repos/${repo}/contents/.github/workflows/deploy.yml`)).content).includes("pr-preview"); } catch (e) { /* absent */ }
   if (!ready) return root.append(panel("Previews par pull request", h("span", { class: "fe-meta" }, "Chaque PR obtient sa propre URL de test, supprimée automatiquement à la fermeture. Il faut installer le workflow (déploiement auto + previews)."),
     btn("Activer les previews", "git-pull-request", () => act(async () => { const L = loading("Activation des previews", 3); try { await setupAuto(repo, L); } finally { L.close(); } render(S.cur); }), "primary")));
   const base = ((await pagesUrl(repo)) || `https://${m.owner.login}.github.io/${m.name}/`).replace(/\/$/, "");
@@ -80,25 +81,6 @@ async function vPreviews(root) {
   });
   root.append(h("div", { class: "fe-list" }, rows.length ? rows : h("div", { class: "fe-empty" }, "Aucune pull request ouverte.")));
   if (prs.some((p) => !up.has("pr-" + p.number))) S.timer = setTimeout(() => render(S.cur), 12000);
-}
-
-/* ---- Logs (journal du projet) ---- */
-async function vLogs(root) {
-  const repo = cur(); if (!repo) return empty(root);
-  const [runs, commits, prs] = await Promise.all([gh(`/repos/${repo}/actions/runs?per_page=50`), gh(`/repos/${repo}/commits?per_page=30`).catch(() => []), gh(`/repos/${repo}/pulls?state=all&per_page=20&sort=updated`)]);
-  const ev = [...runs.workflow_runs.map((r) => ({ t: r.updated_at, k: "DEPLOY", lvl: r.conclusion === "failure" ? "error" : r.status !== "completed" ? "warn" : "ok", m: `${r.name} · ${r.head_branch} · ${r.head_sha.slice(0, 7)} · ${r.status === "completed" ? r.conclusion + " (" + dur(r.run_started_at, r.updated_at) + ")" : "en cours"}` })),
-    ...commits.map((c) => ({ t: c.commit.author.date, k: "COMMIT", lvl: "info", m: `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]} — ${c.commit.author.name}` })),
-    ...prs.map((p) => ({ t: p.merged_at || p.closed_at || p.created_at, k: "PR", lvl: "info", m: `#${p.number} ${p.merged_at ? "fusionnée" : p.state === "open" ? "ouverte" : "fermée"} · ${p.title}` }))].sort((a, b) => new Date(b.t) - new Date(a.t));
-  const con = h("div", { class: "fe-console" });
-  const f = h("select", { class: "fe-select", onchange: draw }, ["Tout", "Erreurs", "Déploiements", "Commits", "PR"].map((x) => h("option", {}, x)));
-  let shown = [];
-  function draw() {
-    shown = ev.filter((e) => ({ Tout: 1, Erreurs: e.lvl === "error", Déploiements: e.k === "DEPLOY", Commits: e.k === "COMMIT", PR: e.k === "PR" })[f.value] && match(e.m));
-    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", { class: "k-" + e.k }, e.k), h("span", {}, e.m))));
-    if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement."));
-  }
-  root.append(h("div", { class: "fe-bar" }, f, btn("Copier", "copy", () => navigator.clipboard.writeText(shown.map((e) => `${e.t} ${e.k} ${e.m}`).join("\n")).then(() => toast("Logs copiés"))), btn("Actualiser", "refresh-cw", () => render(S.cur))), con);
-  draw();
 }
 
 function commitCard(repo, m, path) {
@@ -132,34 +114,20 @@ function commitCard(repo, m, path) {
 async function vFiles(root) {
   const repo = cur(); if (!repo) return empty(root);
   const m = await gh(`/repos/${repo}`), path = S.path || "", up = () => { S.path = path.split("/").slice(0, -1).join("/"); render(S.cur); };
-  const data = await gh(`/repos/${repo}/contents/${path}?ref=${m.default_branch}`);
+  const data = await gh(`/repos/${repo}/contents/${encPath(path)}?ref=${m.default_branch}`);
   const crumbs = h("div", { class: "fe-crumbs" }, btn(m.name, "folder-git-2", () => { S.path = ""; render(S.cur); }), ...path.split("/").filter(Boolean).flatMap((seg, i, a) => [h("span", { class: "fe-meta" }, "/"), h("button", { type: "button", class: "fe-crumb", onclick: () => { S.path = a.slice(0, i + 1).join("/"); render(S.cur); } }, seg)]));
   if (!Array.isArray(data)) {
     if (data.size > 200000 || /\.(png|jpe?g|gif|webp|ico|woff2?|pdf|zip)$/i.test(data.name)) return root.append(crumbs, panel(data.name, h("span", { class: "fe-meta" }, "Fichier binaire ou trop gros pour l'éditeur."), link(data.html_url, "Voir sur GitHub")));
-    const ta = h("textarea", { class: "fe-editor", spellcheck: "false" }); ta.value = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
+    const ta = h("textarea", { class: "fe-editor", spellcheck: "false" }); ta.value = fromB64(data.content);
     const msg = h("input", { class: "fe-input", value: "Update " + data.name, style: "flex:1" });
     return root.append(crumbs, ta, h("div", { class: "fe-bar" }, msg, btn("Commit et déployer", "git-commit-horizontal", () => act(async () => {
-      await gh(`/repos/${repo}/contents/${path}`, { method: "PUT", body: { message: msg.value, content: btoa(unescape(encodeURIComponent(ta.value))), sha: data.sha, branch: m.default_branch } });
+      await gh(`/repos/${repo}/contents/${encPath(path)}`, { method: "PUT", body: { message: msg.value, content: toB64(ta.value), sha: data.sha, branch: m.default_branch } });
       go("Déploiements");
     }, "Commit créé : déploiement en cours"), "primary")));
   }
   const items = [...data].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || a.name.localeCompare(b.name)).filter((x) => match(x.name));
-  root.append(crumbs, h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Nouveau fichier", "file-plus", () => { const n = prompt("Nom du fichier (ex. about.html)"); if (n) act(async () => { await gh(`/repos/${repo}/contents/${path ? path + "/" : ""}${n}`, { method: "PUT", body: { message: "Add " + n, content: btoa("\n"), branch: m.default_branch } }); render(S.cur); }, "Fichier créé"); })),
+  root.append(crumbs, h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Nouveau fichier", "file-plus", () => { const n = prompt("Nom du fichier (ex. about.html)"); if (n) act(async () => { await gh(`/repos/${repo}/contents/${encPath((path ? path + "/" : "") + n)}`, { method: "PUT", body: { message: "Add " + n, content: btoa("\n"), branch: m.default_branch } }); render(S.cur); }, "Fichier créé"); })),
     h("div", { class: "fe-list" }, items.map((x) => h("div", { class: "fe-row fe-click", onclick: () => { S.path = x.path; render(S.cur); } }, ic(x.type === "dir" ? "folder" : /\.(html?|jsx?|tsx?|css|json|ya?ml)$/i.test(x.name) ? "file-code" : /\.(png|jpe?g|gif|webp|svg|ico)$/i.test(x.name) ? "image" : "file-text"), h("div", { class: "fe-main" }, h("b", {}, x.name)), h("span", { class: "fe-meta" }, x.type === "dir" ? "" : x.size > 1024 ? (x.size / 1024).toFixed(1) + " Ko" : x.size + " o")))), commitCard(repo, m, path));
-}
-
-/* ---- Analytics ---- */
-async function vAnalytics(root) {
-  const repo = cur(); if (!repo) return empty(root);
-  try {
-    const [v, c, ref, pth] = await Promise.all([gh(`/repos/${repo}/traffic/views`), gh(`/repos/${repo}/traffic/clones`), gh(`/repos/${repo}/traffic/popular/referrers`), gh(`/repos/${repo}/traffic/popular/paths`)]);
-    const ds = days(14), by = (a, k) => ds.map((d) => a.find((x) => x.timestamp.slice(0, 10) === d)?.[k] || 0);
-    root.append(h("div", { class: "fe-stats" }, stat("Vues (14 j)", v.count), stat("Visiteurs uniques", v.uniques), stat("Clones", c.count)),
-      panel("Trafic de la page du dépôt", chart({ type: "line", labels: ds.map(dl), series: [{ name: "Vues", color: "#111", data: by(v.views, "count") }, { name: "Visiteurs", color: "#7C9BC0", data: by(v.views, "uniques") }] })),
-      panel("Clones", chart({ labels: ds.map(dl), series: [{ name: "Clones", color: "#111", data: by(c.clones, "count") }] })),
-      h("div", { class: "fe-grid" }, panel("Sources", ...ref.map((x) => h("div", { class: "fe-meta" }, `${x.referrer} — ${x.count} vues`)), !ref.length && h("span", { class: "fe-meta" }, "Aucune donnée")),
-        panel("Pages populaires", ...pth.map((x) => h("div", { class: "fe-meta" }, `${x.path} — ${x.count}`)), !pth.length && h("span", { class: "fe-meta" }, "Aucune donnée"))));
-  } catch (e) { root.append(panel("Trafic indisponible", h("span", { class: "fe-meta" }, e.message + " (les stats de trafic demandent les droits d'écriture sur le dépôt)."))); }
 }
 
 /* ---- Projet sélectionné : sélecteur de la navbar + barre de projet ---- */
@@ -236,7 +204,7 @@ async function vGeneral(root) {
     set("Branche de production", "Chaque push sur cette branche déclenche un déploiement.", h("div", { class: "fe-field" }, h("code", {}, m.default_branch)), "Modifiable depuis GitHub › Settings › Branches."),
     set("Visibilité", "Détermine qui peut voir le code du dépôt.", h("div", { class: "fe-field" }, h("code", {}, m.private ? "Privé" : "Public"), link(m.html_url, "Ouvrir sur GitHub")), "Gérée par GitHub."), danger));
 }
-Object.assign(VIEWS, { "Général": vGeneral, "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
+Object.assign(VIEWS, { "Général": vGeneral, "Aperçu": vOverview, "Previews": vPreviews, "Fichiers": vFiles, "Environnements": vPreviews });
 /* ---- Versions, Support, Logs et Analytics façon Vercel ---- */
 const refs = async (repo) => { const [b, t] = await Promise.all([gh(`/repos/${repo}/branches?per_page=100`), gh(`/repos/${repo}/tags?per_page=100`).catch(() => [])]); return [...t.map((x) => x.name), ...b.map((x) => x.name)]; };
 const sel = (opts, val) => h("select", { class: "fe-select" }, opts.map((o) => h("option", { value: o, selected: o === val }, o)));
@@ -284,7 +252,7 @@ async function vSupport(root) {
   root.append(h("div", { class: "fe-bar" }, st, h("span", { style: "flex:1" }), btn("Nouveau ticket", "plus", () => { form.hidden = !form.hidden; }, "primary")), form, list);
   draw();
 }
-async function vLogs2(root) {
+async function vLogs(root) {
   const repo = cur();
   const [runs, commits, prs] = await Promise.all([gh(`/repos/${repo}/actions/runs?per_page=50`), gh(`/repos/${repo}/commits?per_page=30`).catch(() => []), gh(`/repos/${repo}/pulls?state=all&per_page=20&sort=updated`)]);
   const ev = [...runs.workflow_runs.map((r) => ({ t: r.updated_at, k: "DEPLOY", lvl: r.conclusion === "failure" ? "error" : r.status !== "completed" ? "warn" : "ok", m: `${r.name} · ${r.head_branch} · ${r.head_sha.slice(0, 7)} · ${r.status === "completed" ? r.conclusion + " (" + dur(r.run_started_at, r.updated_at) + ")" : "en cours"}` })),
@@ -310,7 +278,7 @@ function area(labels, data) {
   labels.forEach((l, i) => { if (i % 2 === 0) g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#7a7a7a">${l}</text>`; });
   const el = h("div", { class: "fe-area" }); el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">${g}</svg>`; return el;
 }
-async function vAnalytics2(root) {
+async function vAnalytics(root) {
   const repo = cur();
   try {
     const [v, c, ref, pth] = await Promise.all([gh(`/repos/${repo}/traffic/views`), gh(`/repos/${repo}/traffic/clones`), gh(`/repos/${repo}/traffic/popular/referrers`), gh(`/repos/${repo}/traffic/popular/paths`)]);
@@ -324,7 +292,7 @@ async function vAnalytics2(root) {
     pick(0);
   } catch (e) { root.append(panel("Trafic indisponible", h("span", { class: "fe-meta" }, e.message + " (les stats de trafic demandent les droits d'écriture sur le dépôt)."))); }
 }
-Object.assign(VIEWS, { "Releases": vReleases, "Tags": vTags, "Changelog": (r) => cmpView(r, true), "Comparer": (r) => cmpView(r, false), "Support": vSupport, "Logs": vLogs2, "Analytics": vAnalytics2 });
+Object.assign(VIEWS, { "Releases": vReleases, "Tags": vTags, "Changelog": (r) => cmpView(r, true), "Comparer": (r) => cmpView(r, false), "Support": vSupport, "Logs": vLogs, "Analytics": vAnalytics });
 async function vSecurity(root) {
   const item = (icon, t, d) => h("div", { class: "fe-secitem" }, h("span", { class: "fe-iconbox" }, ic(icon)), h("div", {}, h("b", {}, t), h("p", { class: "fe-meta" }, d)));
   root.append(h("div", { class: "fe-settings" }, h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" },

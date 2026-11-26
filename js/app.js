@@ -1,7 +1,11 @@
 (() => {
 const LS = (k) => localStorage.getItem(k);
 const SET = (k, v) => (v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v));
-const S = { user: null, repos: null, q: "", timer: null, cur: null };
+const S = { user: null, repos: null, q: "", timer: null, cur: null, path: "", live: false };
+
+// Base64 UTF-8 sûr (remplace escape/unescape, dépréciés) et sans dépassement de pile.
+const toB64 = (s) => { const b = new TextEncoder().encode(s); let r = ""; for (let i = 0; i < b.length; i += 0x8000) r += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(r); };
+const fromB64 = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), (c) => c.charCodeAt(0)));
 
 const h = (t, a = {}, ...c) => {
   const e = document.createElement(t);
@@ -19,7 +23,7 @@ const icons = () => window.lucide && lucide.createIcons();
 const go = (label) => [...document.querySelectorAll(".nav-item")].find((i) => i.querySelector("span")?.textContent.trim() === label)?.click();
 
 function toast(msg, err) {
-  const t = h("div", { class: "fe-toast" + (err ? " err" : "") }, msg);
+  const t = h("div", { class: "fe-toast" + (err ? " err" : ""), role: err ? "alert" : "status" }, msg);
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
@@ -54,11 +58,16 @@ async function gh(path, opt = {}) {
   if (r.status === 204) return null;
   const d = await r.json().catch(() => null);
   if (r.status === 401) { SET("fe_token"); throw new Error("Token invalide ou expiré : reconnecte-toi."); }
+  if ((r.status === 403 || r.status === 429) && r.headers.get("x-ratelimit-remaining") === "0") {
+    const at = new Date(r.headers.get("x-ratelimit-reset") * 1000).toLocaleTimeString("fr-FR", { timeStyle: "short" });
+    throw new Error(`Limite de requêtes GitHub atteinte : réessaie vers ${at}.`);
+  }
   if (!r.ok) throw new Error(d?.message || "Erreur " + r.status);
   return d;
 }
 async function ghText(path) {
   const r = await fetch("https://api.github.com" + path, { headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + LS("fe_token") } });
+  if (r.status === 401) { SET("fe_token"); throw new Error("Token invalide ou expiré : reconnecte-toi."); }
   if (!r.ok) throw new Error("Log indisponible (" + r.status + ")");
   return (await r.text()).replace(/\x1b\[[0-9;]*m/g, "").replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /gm, "");
 }
@@ -73,7 +82,7 @@ async function setupAuto(repo, L) {
   L && L.step("Ajout du workflow de déploiement et de previews");
   const path = `/repos/${repo}/contents/.github/workflows/deploy.yml`;
   let sha; try { sha = (await gh(path + "?ref=" + br)).sha; } catch (e) { /* absent */ }
-  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement auto + previews par PR", content: btoa(WF), branch: br, sha } });
+  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement auto + previews par PR", content: toB64(WF), branch: br, sha } });
   L && L.step("Premier build en cours (30 s à 2 min)");
   if (sha) gh(`/repos/${repo}/actions/workflows/deploy.yml/dispatches`, { method: "POST", body: { ref: br } }).catch(() => {});
   for (let i = 0; ; i++) {
@@ -101,20 +110,12 @@ async function deploy(repo, ref) {
   const w = await gh(`/repos/${repo}/actions/workflows`);
   const wf = w.workflows.find((x) => x.state === "active");
   if (wf) {
-    try { await gh(`/repos/${repo}/actions/workflows/${wf.id}/dispatches`, { method: "POST", body: { ref: ref || "main" } }); return toast("Déploiement lancé : " + wf.name); } catch (e) { /* pas de workflow_dispatch */ }
+    try { await gh(`/repos/${repo}/actions/workflows/${wf.id}/dispatches`, { method: "POST", body: { ref: ref || (await gh(`/repos/${repo}`)).default_branch } }); return toast("Déploiement lancé : " + wf.name); } catch (e) { /* pas de workflow_dispatch */ }
   }
   await gh(`/repos/${repo}/pages/builds`, { method: "POST" });
   toast("Build GitHub Pages lancé");
 }
 
-async function picker(onchange) {
-  return null; // le projet se choisit via le sélecteur de la navbar
-  const list = await repos();
-  const sel = h("select", { class: "fe-select", onchange: (e) => { SET("fe_repo", e.target.value); onchange(); } },
-    h("option", { value: "" }, "Choisir un projet…"),
-    list.map((r) => h("option", { value: r.full_name, selected: r.full_name === cur() }, r.full_name)));
-  return sel;
-}
 const dotOf = (r) => (r.status !== "completed" ? "run" : r.conclusion === "success" ? "ok" : r.conclusion === "failure" ? "fail" : "");
 const match = (...s) => !S.q || s.join(" ").toLowerCase().includes(S.q);
 
@@ -128,7 +129,7 @@ async function vConnect(root) {
     set("Compte GitHub", "Le compte utilisé par Deploy pour lire et modifier tes dépôts.", null,
       h("div", { class: "fe-conn" }, u ? h("img", { class: "fe-uava", src: u.avatar_url, alt: "" }) : h("span", { class: "fe-uava" }, ic("user")), h("div", { class: "fe-main" }, h("b", {}, u ? u.login : "Non connecté"), h("span", { class: "fe-meta" }, u ? "Connecté à GitHub" : "Ajoute un token pour commencer")), h("span", { class: "fe-pill " + (u ? "prod" : "") }, u ? "Actif" : "Hors ligne")),
       u && h("div", { class: "fe-bar", style: "margin:0" }, btn("Se déconnecter", "log-out", () => { SET("fe_token"); SET("fe_repo"); S.user = null; S.repos = null; toast("Déconnecté"); render(S.cur); }))),
-    set("Personal Access Token", "Colle un token GitHub. Il reste uniquement dans ton navigateur.", [h("span", { class: "fe-meta" }, "Droits requis : repo, workflow, delete_repo."), h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow,delete_repo&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token")],
+    set("Personal Access Token", "Colle un token GitHub. Il reste uniquement dans ton navigateur.", [h("span", { class: "fe-meta" }, "Droits requis : repo, workflow (delete_repo seulement pour supprimer un projet)."), h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token")],
       h("div", { class: "fe-field" }, input, btn("Se connecter", "log-in", connect, "primary")))));
   input.addEventListener("keydown", (e) => e.key === "Enter" && connect());
 }
@@ -167,7 +168,7 @@ function newProjectForm() {
         await new Promise((r) => setTimeout(r, 1500));
         L.step("Ajout de la page d'accueil");
         const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`;
-        await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: btoa(unescape(encodeURIComponent(html))), branch: repo.default_branch } });
+        await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: toB64(html), branch: repo.default_branch } });
         await setupAuto(repo.full_name, L);
         L.step("Site en ligne"); L.done();
         S.repos = null;
@@ -237,8 +238,6 @@ async function vActivity(root) {
 }
 
 async function vDomains(root) {
-  const bar = h("div", { class: "fe-bar" }, await picker(() => render(S.cur)));
-  root.append(bar);
   const repo = cur(); if (!repo) return root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   let p;
   try { p = await gh(`/repos/${repo}/pages`); } catch (e) {
@@ -253,19 +252,7 @@ async function vDomains(root) {
       btn(p.https_enforced ? "HTTPS forcé ✓" : "Forcer HTTPS", "lock", () => act(() => gh(`/repos/${repo}/pages`, { method: "PUT", body: { https_enforced: true } }), "HTTPS forcé")))));
 }
 
-async function vEnvs(root) {
-  root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur))));
-  const repo = cur(); if (!repo) return root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
-  const [prs, brs] = await Promise.all([gh(`/repos/${repo}/pulls?state=open&per_page=30`), gh(`/repos/${repo}/branches?per_page=30`)]);
-  const rows = [...prs.map((p) => ({ t: `PR #${p.number} · ${p.title}`, m: `${p.head.ref} · ${ago(p.updated_at)}`, ref: p.head.ref, url: p.html_url })),
-    ...brs.map((b) => ({ t: "Branche " + b.name, m: b.protected ? "protégée" : "branche", ref: b.name, url: `https://github.com/${repo}/tree/${b.name}` }))].filter((x) => match(x.t, x.m));
-  root.append(h("div", { class: "fe-list" }, rows.map((x) => h("div", { class: "fe-row" }, h("span", { class: "fe-dot" }),
-    h("div", { class: "fe-main" }, h("b", {}, x.t), h("span", { class: "fe-meta" }, x.m)),
-    btn("Déployer", "rocket", () => act(() => deploy(repo, x.ref))), h("a", { class: "fe-btn", href: x.url, target: "_blank", rel: "noopener" }, ic("external-link"), "Ouvrir")))));
-}
-
 async function vVars(root) {
-  root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur))));
   const repo = cur(); if (!repo) return root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   const d = await gh(`/repos/${repo}/actions/variables?per_page=100`);
   const n = h("input", { class: "fe-input", placeholder: "NOM" }), v = h("input", { class: "fe-input", placeholder: "valeur" });
@@ -278,23 +265,11 @@ async function vVars(root) {
     btn("Supprimer", "trash-2", () => act(async () => { await gh(`/repos/${repo}/actions/variables/${x.name}`, { method: "DELETE" }); render(S.cur); }, "Supprimée"))))));
 }
 
-async function vAnalytics(root) {
-  root.append(h("div", { class: "fe-bar" }, await picker(() => render(S.cur))));
-  const repo = cur(); if (!repo) return root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
-  const [v, c] = await Promise.all([gh(`/repos/${repo}/traffic/views`), gh(`/repos/${repo}/traffic/clones`)]);
-  const max = Math.max(1, ...v.views.map((x) => x.count));
-  root.append(h("div", { class: "fe-card" }, h("div", {}, h("b", {}, `${v.count} vues · ${v.uniques} visiteurs uniques`), ` (14 jours, page du dépôt) · ${c.count} clones`),
-    h("div", { class: "fe-bars" }, v.views.map((x) => h("div", { title: `${x.timestamp.slice(0, 10)} : ${x.count}`, style: `height:${(x.count / max) * 100}%` })))));
-}
-
 const PROJ = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements", "Releases", "Tags", "Changelog", "Comparer", "Support"];
 const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t));
 const VIEWS = {
   "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
-  "Déploiements": (r) => vRuns(r), "Tous les runs": (r) => vRuns(r), "Réussis": (r) => vRuns(r, (x) => x.conclusion === "success"),
-  "En cours": (r) => vRuns(r, (x) => x.status !== "completed"), "Échecs": (r) => vRuns(r, (x) => x.conclusion === "failure"),
-  "Annulés": (r) => vRuns(r, (x) => x.conclusion === "cancelled"),
-  "Domaines": vDomains, "Environnements": vEnvs, "Variables d'environnement": vVars, "Analytics": vAnalytics, "Git": vConnect,
+  "Domaines": vDomains, "Variables d'environnement": vVars, "Git": vConnect,
   "Sécurité": info("Ton token n'est stocké que dans le localStorage de ce navigateur et n'est envoyé qu'à api.github.com. Utilise un token à durée limitée et révoque-le sur GitHub si besoin."),
   "Support": info("1) Paramètres › Git : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : logs, relance, rollback."),
 };
@@ -334,5 +309,5 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); document.getElementById("searchbar").click(); }
 });
 if (LS("fe_token")) gh("/user").then(setProfile).catch(() => {});
-window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, render, go, picker, match, dotOf, repos, VIEWS, loading };
+window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, render, go, toB64, fromB64, match, dotOf, repos, VIEWS, loading };
 })();

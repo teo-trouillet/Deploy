@@ -1,0 +1,47 @@
+# Deploy
+
+Un tableau de bord à la Vercel pour **déployer et gérer tes sites GitHub Pages**, entièrement côté navigateur : pas de serveur, pas de build, uniquement l'API GitHub.
+
+## Fonctionnalités
+
+- **Projets** : liste de tes dépôts, création d'un site en un clic (dépôt + page d'accueil + workflow + GitHub Pages)
+- **Déploiements** : historique des runs GitHub Actions, logs, relance, annulation, rollback
+- **Previews** par pull request (via `rossjrw/pr-preview-action`)
+- **Fichiers** : parcours, édition et commit directement sur la branche par défaut, import de fichiers en un seul commit
+- **Domaines**, **variables Actions**, **releases**, **tags**, **changelog**, **comparaison** de branches, **support** (issues), **analytics** (trafic du dépôt)
+
+## Lancer en local
+
+Le projet est statique, il suffit de servir le dossier :
+
+```bash
+python3 -m http.server 8000
+# puis http://localhost:8000
+```
+
+Dans **Paramètres › Git**, colle un [Personal Access Token](https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy) avec les droits `repo` et `workflow` (`delete_repo` uniquement si tu veux supprimer des projets).
+
+## Sécurité
+
+Le token est stocké dans le `localStorage` du navigateur et n'est envoyé qu'à `api.github.com`. Comme tout secret dans le `localStorage`, il est exposé en cas de faille XSS : utilise un token à durée de vie courte et révoque-le si besoin. N'héberge pas cette app avec des scripts tiers non maîtrisés.
+
+## Structure
+
+```
+index.html        page unique
+css/shell.css     coque (navbar, header, animations)
+css/views.css     vues fonctionnelles (cartes, listes, graphiques)
+js/shell.js       intro, navbar, routage des pages
+js/app.js         client GitHub, état, vues principales
+js/project.js     sélecteur de projet, aperçu, fichiers, releases, logs…
+```
+
+## Limites connues
+
+- API GitHub limitée à 5 000 requêtes/h (un message l'indique quand la limite est atteinte)
+- Les stats de trafic exigent un accès en écriture au dépôt
+- Les dépôts sont listés sur 100 éléments maximum
+
+## Licence
+
+MIT
