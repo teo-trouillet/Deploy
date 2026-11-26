@@ -90,11 +90,15 @@ async function ghText(path) {
 }
 // Workflow installé dans les projets : build auto (npm) si package.json, sinon publication telle quelle.
 // Réglable via les variables Actions BUILD_COMMAND et OUTPUT_DIR.
-const WF = [
+// Les variables Actions dont le nom commence par un préfixe « public » (VITE_, PUBLIC_, NEXT_PUBLIC_…) sont injectées dans le build ;
+// elles finissent dans le bundle du site : jamais de secret. Les secrets ne sont jamais injectés.
+const PUBLIC_VAR_RE = "^(VITE|PUBLIC|NEXT_PUBLIC|REACT_APP|GATSBY|NUXT_PUBLIC|ASTRO_PUBLIC)_";
+// La production suit la branche par défaut du dépôt (et non plus une liste figée main/master).
+const makeWF = (branch = "main") => [
   "name: Deploy",
   "on:",
   "  push:",
-  "    branches: [main, master]",
+  `    branches: [${JSON.stringify(branch)}]`,
   "  pull_request:",
   "    types: [opened, reopened, synchronize, closed]",
   "  workflow_dispatch:",
@@ -111,6 +115,13 @@ const WF = [
   "        if: github.event.action != 'closed'",
   "        with:",
   "          node-version: 22",
+  "      - name: Variables publiques",
+  "        if: github.event.action != 'closed'",
+  "        env:",
+  "          VARS_JSON: ${{ toJSON(vars) }}",
+  "        run: |",
+  "          D=\"EOF_$(openssl rand -hex 8)\"",
+  `          echo "$VARS_JSON" | jq -r --arg d "$D" 'to_entries[] | select(.key | test("${PUBLIC_VAR_RE}")) | (.key + "<<" + $d), .value, $d' >> "$GITHUB_ENV"`,
   "      - name: Build",
   "        id: build",
   "        if: github.event.action != 'closed'",
@@ -148,7 +159,7 @@ async function setupAuto(repo, L) {
   L && L.step("Ajout du workflow de déploiement et de previews");
   const path = `/repos/${repo}/contents/.github/workflows/deploy.yml`;
   let sha; try { sha = (await gh(path + "?ref=" + br)).sha; } catch (e) { /* absent */ }
-  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement auto + previews par PR", content: toB64(WF), branch: br, sha } });
+  await gh(path, { method: "PUT", body: { message: "Deploy: déploiement auto + previews par PR", content: toB64(makeWF(br)), branch: br, sha } });
   L && L.step("Premier build en cours (30 s à 2 min)");
   if (sha) gh(`/repos/${repo}/actions/workflows/deploy.yml/dispatches`, { method: "POST", body: { ref: br } }).catch(() => {});
   for (let i = 0; ; i++) {
@@ -166,7 +177,7 @@ const act = async (fn, ok) => { try { await fn(); ok && toast(ok); } catch (e) {
 const repos = async (force) => {
   if (S.repos && !force) return S.repos;
   let all = [];
-  for (let pg = 1; pg <= 5; pg++) { const r = await gh(`/user/repos?sort=pushed&per_page=100&affiliation=owner,collaborator&page=${pg}`); all = all.concat(r); if (r.length < 100) break; }
+  for (let pg = 1; pg <= 5; pg++) { const r = await gh(`/user/repos?sort=pushed&per_page=100&affiliation=owner,collaborator,organization_member&page=${pg}`); all = all.concat(r); if (r.length < 100) break; }
   return (S.repos = all);
 };
 const cur = () => LS("fe_repo");
@@ -260,7 +271,7 @@ function watchFailures(repo, runs) {
   }
 }
 async function vRuns(root, filter) {
-  const box = h("div", { class: "fe-list" }), stats = h("div", { class: "fe-stats" }), FS = { Tous: () => 1, Réussis: (r) => r.conclusion === "success", "En cours": (r) => r.status !== "completed", Échecs: (r) => r.conclusion === "failure", Annulés: (r) => r.conclusion === "cancelled" };
+  const box = h("div", { class: "fe-list" }, ), stats = h("div", { class: "fe-stats" }), FS = { Tous: () => 1, Réussis: (r) => r.conclusion === "success", "En cours": (r) => r.status !== "completed", Échecs: (r) => r.conclusion === "failure", Annulés: (r) => r.conclusion === "cancelled" };
   const fsel = h("select", { class: "fe-select chip", onchange: () => load() }, Object.keys(FS).map((k) => h("option", {}, "Statut : " + k)));
   root.append(h("div", { class: "fe-bar" }, fsel, "Notification" in window && btn("Alertes d'échec", "bell", () => Notification.requestPermission().then((r) => toast(r === "granted" ? "Alertes activées (onglet ouvert)" : "Notifications refusées", r !== "granted"))),
     btn("Déployer maintenant", "rocket", () => act(() => deploy(cur()), null), "primary")), stats, box);
@@ -273,7 +284,8 @@ async function vRuns(root, filter) {
     stats.replaceChildren(...[["Déploiements", d.total_count], ["Taux de réussite", done.length ? Math.round((ok.length / done.length) * 100) + " %" : "—"],
       ["Durée moyenne", ok.length ? dur(0, ok.reduce((a, r) => a + (new Date(r.updated_at) - new Date(r.run_started_at)), 0) / ok.length) : "—"]]
       .map(([k, v]) => h("div", { class: "fe-stat" }, h("b", {}, String(v)), h("span", { class: "fe-meta" }, k))));
-    const firstOk = d.workflow_runs.find((r) => r.conclusion === "success")?.id;
+    // « Version actuelle » = dernier déploiement de production réussi (jamais un run de PR).
+    const firstOk = d.workflow_runs.find((r) => r.conclusion === "success" && r.event !== "pull_request")?.id;
     box.replaceChildren(...runs.map((r) => runRow(repo, r, firstOk, load)));
     if (!runs.length) box.append(h("div", { class: "fe-empty" }, "Aucun run."));
     icons();
@@ -301,7 +313,7 @@ function runRow(repo, r, firstOk, reload) {
     r.status !== "completed"
       ? btn("Annuler", "x", () => act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/cancel`, { method: "POST" }); reload(); }, "Annulation demandée"))
       : btn("Relancer", "rotate-cw", () => act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/rerun`, { method: "POST" }); setTimeout(reload, 1500); }, "Run relancé")),
-    r.conclusion === "success" && r.id !== firstOk && btn("Restaurer", "undo-2", () => confirm("Redéployer cette version ?") && act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/rerun`, { method: "POST" }); setTimeout(reload, 1500); }, "Restauration lancée")),
+    !prev && r.conclusion === "success" && r.id !== firstOk && btn("Restaurer", "undo-2", () => confirm("Redéployer cette version ?") && act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/rerun`, { method: "POST" }); setTimeout(reload, 1500); }, "Restauration lancée")),
     steps);
   return row;
 }
@@ -349,7 +361,7 @@ async function sealSecret(repo, name, value) {
 }
 function secretsCard(repo) {
   const n = h("input", { class: "fe-input", placeholder: "NOM_DU_SECRET" }), v = h("input", { class: "fe-input", type: "password", placeholder: "valeur", autocomplete: "off" });
-  return h("div", { class: "fe-card" }, h("b", {}, "Secrets"), h("span", { class: "fe-meta" }, "Chiffrés dans ton navigateur (libsodium) avant envoi à GitHub ; illisibles ensuite. Utilisables dans les workflows via ${{ secrets.NOM }}."),
+  return h("div", { class: "fe-card" }, h("b", {}, "Secrets"), h("span", { class: "fe-meta" }, "Chiffrés dans ton navigateur (libsodium) avant envoi à GitHub ; illisibles ensuite. Utilisables dans tes propres workflows via ${{ secrets.NOM }} ; le workflow Deploy ne les injecte pas dans le build."),
     h("div", { class: "fe-bar", style: "margin:0" }, n, v, btn("Enregistrer le secret", "lock", () => act(async () => {
       if (!/^[A-Z_][A-Z0-9_]*$/.test(n.value.trim()) || !v.value) throw new Error("Nom en MAJUSCULES_ET_TIRETS_BAS et valeur requis.");
       if (/^GITHUB_/.test(n.value.trim())) throw new Error("Les noms de secrets ne peuvent pas commencer par GITHUB_.");
@@ -379,7 +391,8 @@ async function vVars(root) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(body.name) || /^GITHUB_/i.test(body.name)) throw new Error("Nom invalide (lettres, chiffres, _ ; sans préfixe GITHUB_).");
     try { await gh(`/repos/${repo}/actions/variables`, { method: "POST", body }); } catch { await gh(`/repos/${repo}/actions/variables/${body.name}`, { method: "PATCH", body }); }
     render(S.cur);
-  }, "Variable enregistrée"), "primary")), h("div", { class: "fe-meta" }, "Variables Actions (non secrètes). Spéciales : BUILD_COMMAND (ex. npm run build) et OUTPUT_DIR (ex. dist) règlent le build du déploiement ; sans elles, Deploy détecte package.json et le dossier dist/build/out.")),
+  }, "Variable enregistrée"), "primary")), h("div", { class: "fe-meta" }, "Variables Actions (non secrètes). Spéciales : BUILD_COMMAND (ex. npm run build) et OUTPUT_DIR (ex. dist) règlent le build du déploiement ; sans elles, Deploy détecte package.json et le dossier dist/build/out."),
+    h("div", { class: "fe-meta" }, "Injectées dans le build : les variables préfixées VITE_, PUBLIC_, NEXT_PUBLIC_, REACT_APP_, GATSBY_, NUXT_PUBLIC_ ou ASTRO_PUBLIC_ (ex. VITE_API_URL). Elles finissent dans le site publié : n'y mets jamais de secret. Les autres variables restent hors du build. Après la première utilisation, clique « Déploiement auto » pour mettre à jour le workflow d'un projet existant.")),
   h("div", { class: "fe-list" }, d.variables.filter((x) => match(x.name)).map((x) => h("div", { class: "fe-row" }, h("div", { class: "fe-main" }, h("b", {}, x.name), h("span", { class: "fe-meta" }, x.value)),
     btn("Supprimer", "trash-2", () => act(async () => { await gh(`/repos/${repo}/actions/variables/${x.name}`, { method: "DELETE" }); render(S.cur); }, "Supprimée"))))));
 }
@@ -444,5 +457,5 @@ const localLogin = () => LS("fe_token") && gh("/user").then(setProfile).catch(()
   if (r.ok) { S.proxy = true; return gh("/user").then(setProfile).then(() => S.cur && render(S.cur)); }
   return localLogin();
 })).catch(localLogin);
-window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, render, go, toB64, fromB64, match, dotOf, repos, VIEWS, loading };
+window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, makeWF, render, go, toB64, fromB64, match, dotOf, repos, VIEWS, loading };
 })();
