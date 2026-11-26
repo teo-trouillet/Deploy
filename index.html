@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Deploy : un tableau de bord pour déployer et gérer tes sites GitHub Pages.">
     <title>Deploy</title>
+    <script>try{var t=localStorage.getItem("fe_theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
     <link rel="stylesheet" href="css/shell.css">
     <link rel="stylesheet" href="css/views.css">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -48,11 +49,11 @@
                     <div class="nav-group-items-inner">
                         <a href="#" class="nav-item nav-item-left">
                             <i data-lucide="terminal"></i>
-                            <span>Logs</span>
+                            <span>Journaux</span>
                         </a>
                         <a href="#" class="nav-item nav-item-left">
                             <i data-lucide="bar-chart-3"></i>
-                            <span>Analytics</span>
+                            <span>Statistiques</span>
                         </a>
                     </div>
                 </div>
@@ -96,7 +97,7 @@
                     <div class="nav-group-items-inner">
                         <a href="#" class="nav-item nav-item-left">
                             <i data-lucide="package"></i>
-                            <span>Releases</span>
+                            <span>Publications</span>
                         </a>
                         <a href="#" class="nav-item nav-item-left">
                             <i data-lucide="tag"></i>
@@ -188,6 +189,7 @@
             <button type="button" class="right-rail-item" data-action="refresh" aria-label="Rafraîchir" title="Rafraîchir"><i data-lucide="refresh-cw"></i></button>
         </div>
         <div class="right-rail-footer">
+            <button type="button" class="right-rail-item" id="theme-toggle" aria-label="Changer de thème" title="Thème : auto / clair / sombre"><i data-lucide="sun-moon"></i></button>
             <button type="button" class="right-rail-item" aria-label="Paramètres rapides" title="Paramètres">
                 <i data-lucide="sliders-horizontal"></i>
             </button>

@@ -47,6 +47,13 @@ const ago = (d) => {
 };
 const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b) - new Date(a)) / 1000)); return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; };
 
+// Messages d'erreur GitHub en français (le message d'origine est conservé entre parenthèses).
+function frErr(status, msg) {
+  const fr = { 403: "Accès refusé : vérifie les droits de ton token (repo, workflow) ou la protection de la branche.", 404: "Introuvable (ou non autorisé) : vérifie le nom du dépôt et les droits du token.",
+    409: "Conflit : la ressource a changé entre-temps, recharge la page.", 422: "GitHub a refusé ces données : vérifie le nom ou le contenu envoyé." }[status];
+  if (status >= 500) return "GitHub est momentanément indisponible, réessaie dans un instant.";
+  return fr ? (msg ? `${fr} (${msg})` : fr) : msg || "Erreur " + status;
+}
 async function gh(path, opt = {}) {
   const t = LS("fe_token");
   if (!t) throw new Error("Non connecté : Paramètres › Git.");
@@ -62,7 +69,7 @@ async function gh(path, opt = {}) {
     const at = new Date(r.headers.get("x-ratelimit-reset") * 1000).toLocaleTimeString("fr-FR", { timeStyle: "short" });
     throw new Error(`Limite de requêtes GitHub atteinte : réessaie vers ${at}.`);
   }
-  if (!r.ok) throw new Error(d?.message || "Erreur " + r.status);
+  if (!r.ok) throw new Error(frErr(r.status, d?.message));
   return d;
 }
 async function ghText(path) {
@@ -71,12 +78,60 @@ async function ghText(path) {
   if (!r.ok) throw new Error("Log indisponible (" + r.status + ")");
   return (await r.text()).replace(/\x1b\[[0-9;]*m/g, "").replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /gm, "");
 }
-const WF = ["name: Deploy", "on:", "  push:", "    branches: [main, master]", "  pull_request:", "    types: [opened, reopened, synchronize, closed]", "  workflow_dispatch:",
-  "concurrency: preview-${{ github.ref }}", "permissions:", "  contents: write", "  pull-requests: write", "jobs:", "  deploy:", "    runs-on: ubuntu-latest", "    steps:",
-  "      - uses: actions/checkout@v4", "      - name: Production", "        if: github.event_name != 'pull_request'", "        uses: JamesIves/github-pages-deploy-action@v4",
-  "        with:", "          folder: .", "          branch: gh-pages", "          clean-exclude: pr-preview/", "          force: false",
-  "      - name: Preview", "        if: github.event_name == 'pull_request'", "        uses: rossjrw/pr-preview-action@v1",
-  "        with:", "          source-dir: .", "          preview-branch: gh-pages", "          umbrella-dir: pr-preview", ""].join("\n");
+// Workflow installé dans les projets : build auto (npm) si package.json, sinon publication telle quelle.
+// Réglable via les variables Actions BUILD_COMMAND et OUTPUT_DIR.
+const WF = [
+  "name: Deploy",
+  "on:",
+  "  push:",
+  "    branches: [main, master]",
+  "  pull_request:",
+  "    types: [opened, reopened, synchronize, closed]",
+  "  workflow_dispatch:",
+  "concurrency: preview-${{ github.ref }}",
+  "permissions:",
+  "  contents: write",
+  "  pull-requests: write",
+  "jobs:",
+  "  deploy:",
+  "    runs-on: ubuntu-latest",
+  "    steps:",
+  "      - uses: actions/checkout@v4",
+  "      - uses: actions/setup-node@v4",
+  "        if: github.event.action != 'closed'",
+  "        with:",
+  "          node-version: 22",
+  "      - name: Build",
+  "        id: build",
+  "        if: github.event.action != 'closed'",
+  "        env:",
+  "          BUILD_COMMAND: ${{ vars.BUILD_COMMAND }}",
+  "          OUTPUT_DIR: ${{ vars.OUTPUT_DIR }}",
+  "        run: |",
+  "          DIR=\"$OUTPUT_DIR\"",
+  "          if [ -f package.json ]; then",
+  "            npm ci || npm install",
+  "            if [ -n \"$BUILD_COMMAND\" ]; then bash -c \"$BUILD_COMMAND\"",
+  "            elif grep -q '\"build\"' package.json; then npm run build; fi",
+  "            if [ -z \"$DIR\" ]; then for d in dist build out public _site; do [ -d \"$d\" ] && DIR=\"$d\" && break; done; fi",
+  "          fi",
+  "          echo \"dir=${DIR:-.}\" >> \"$GITHUB_OUTPUT\"",
+  "      - name: Production",
+  "        if: github.event_name != 'pull_request'",
+  "        uses: JamesIves/github-pages-deploy-action@v4",
+  "        with:",
+  "          folder: ${{ steps.build.outputs.dir }}",
+  "          branch: gh-pages",
+  "          clean-exclude: pr-preview/",
+  "          force: false",
+  "      - name: Preview",
+  "        if: github.event_name == 'pull_request'",
+  "        uses: rossjrw/pr-preview-action@v1",
+  "        with:",
+  "          source-dir: ${{ steps.build.outputs.dir }}",
+  "          preview-branch: gh-pages",
+  "          umbrella-dir: pr-preview",
+].join("\n") + "\n";
 async function setupAuto(repo, L) {
   const m = await gh(`/repos/${repo}`), br = m.default_branch;
   L && L.step("Ajout du workflow de déploiement et de previews");
@@ -206,9 +261,9 @@ function runRow(repo, r, firstOk, reload) {
   const prev = r.event === "pull_request", name = repo.split("/")[1];
   const row = h("div", { class: "fe-row fe-dep" }, h("div", { class: "fe-pname" }, h("span", { class: "fe-avatar sm" }, name[0].toUpperCase()), name), h("b", { class: "fe-ell" }, r.display_title),
     h("span", { class: "fe-scell" }, h("span", { class: "fe-dot " + dotOf(r) }), r.status === "completed" ? `${r.conclusion === "success" ? "Prêt" : r.conclusion} ${dur(r.run_started_at, r.updated_at)}` : "En cours"),
-    h("span", { class: "fe-pill " + (prev ? "prev" : "prod") }, ic(prev ? "eye" : "arrow-up-circle"), prev ? "Preview" : "Production"), h("span", { class: "fe-mono" }, r.head_sha.slice(0, 7)),
+    h("span", { class: "fe-pill " + (prev ? "prev" : "prod") }, ic(prev ? "eye" : "arrow-up-circle"), prev ? "Aperçu PR" : "Production"), h("span", { class: "fe-mono" }, r.head_sha.slice(0, 7)),
     h("span", { class: "fe-meta fe-pfoot" }, ic("git-branch"), r.head_branch), h("span", { class: "fe-meta" }, ago(r.created_at)),
-    btn("Logs", "terminal", () => act(async () => {
+    btn("Journaux", "terminal", () => act(async () => {
       if (!steps.hidden) return (steps.hidden = true);
       const j = await gh(`/repos/${repo}/actions/runs/${r.id}/jobs`);
       steps.replaceChildren(...j.jobs.flatMap((jb) => { const pre = h("pre", { class: "fe-log", hidden: true }); return [h("b", {}, jb.name,
@@ -219,7 +274,7 @@ function runRow(repo, r, firstOk, reload) {
     r.status !== "completed"
       ? btn("Annuler", "x", () => act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/cancel`, { method: "POST" }); reload(); }, "Annulation demandée"))
       : btn("Relancer", "rotate-cw", () => act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/rerun`, { method: "POST" }); setTimeout(reload, 1500); }, "Run relancé")),
-    r.conclusion === "success" && r.id !== firstOk && btn("Rollback", "undo-2", () => confirm("Redéployer cette version ?") && act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/rerun`, { method: "POST" }); setTimeout(reload, 1500); }, "Rollback lancé")),
+    r.conclusion === "success" && r.id !== firstOk && btn("Restaurer", "undo-2", () => confirm("Redéployer cette version ?") && act(async () => { await gh(`/repos/${repo}/actions/runs/${r.id}/rerun`, { method: "POST" }); setTimeout(reload, 1500); }, "Restauration lancée")),
     steps);
   return row;
 }
@@ -260,19 +315,28 @@ async function vVars(root) {
     const body = { name: n.value.trim(), value: v.value };
     try { await gh(`/repos/${repo}/actions/variables`, { method: "POST", body }); } catch { await gh(`/repos/${repo}/actions/variables/${body.name}`, { method: "PATCH", body }); }
     render(S.cur);
-  }, "Variable enregistrée"), "primary")), h("div", { class: "fe-meta" }, "Variables Actions (non secrètes), disponibles dans tes workflows de build.")),
+  }, "Variable enregistrée"), "primary")), h("div", { class: "fe-meta" }, "Variables Actions (non secrètes). Spéciales : BUILD_COMMAND (ex. npm run build) et OUTPUT_DIR (ex. dist) règlent le build du déploiement ; sans elles, Deploy détecte package.json et le dossier dist/build/out.")),
   h("div", { class: "fe-list" }, d.variables.filter((x) => match(x.name)).map((x) => h("div", { class: "fe-row" }, h("div", { class: "fe-main" }, h("b", {}, x.name), h("span", { class: "fe-meta" }, x.value)),
     btn("Supprimer", "trash-2", () => act(async () => { await gh(`/repos/${repo}/actions/variables/${x.name}`, { method: "DELETE" }); render(S.cur); }, "Supprimée"))))));
 }
 
-const PROJ = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements", "Releases", "Tags", "Changelog", "Comparer", "Support"];
+const PROJ = ["Aperçu", "Déploiements", "Journaux", "Fichiers", "Domaines", "Variables d'environnement", "Statistiques", "Général", "Environnements", "Publications", "Tags", "Changelog", "Comparer", "Support"];
 const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t));
 const VIEWS = {
   "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
   "Domaines": vDomains, "Variables d'environnement": vVars, "Git": vConnect,
   "Sécurité": info("Ton token n'est stocké que dans le localStorage de ce navigateur et n'est envoyé qu'à api.github.com. Utilise un token à durée limitée et révoque-le sur GitHub si besoin."),
-  "Support": info("1) Paramètres › Git : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : logs, relance, rollback."),
+  "Support": info("1) Paramètres › Git : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : journaux, relance, restauration."),
 };
+
+function onboarding() {
+  const step = (n, t, d, ...x) => h("li", { class: "fe-onb-step" }, h("span", { class: "fe-onb-n" }, String(n)), h("div", {}, h("b", {}, t), h("p", { class: "fe-meta" }, d), ...x));
+  return h("div", { class: "fe-card fe-onb" }, h("b", { class: "fe-herotitle" }, "Bienvenue sur Deploy"), h("span", { class: "fe-meta" }, "Trois étapes pour mettre ton premier site en ligne."),
+    h("ol", { class: "fe-onb-list" },
+      step(1, "Crée un token GitHub", "Droits repo et workflow, avec une expiration courte.", h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token")),
+      step(2, "Colle-le dans Deploy", "Il reste uniquement dans ton navigateur.", btn("Ouvrir Paramètres › Git", "key-round", () => go("Git"), "primary")),
+      step(3, "Choisis ou crée un projet", "Un nom suffit : dépôt, workflow et GitHub Pages sont configurés pour toi.")));
+}
 
 async function render(target) {
   clearTimeout(S.timer);
@@ -283,12 +347,13 @@ async function render(target) {
   if (!fn) return;
   const box = h("div");
   root.append(box);
+  const sk = h("div", { class: "fe-skel", "aria-hidden": "true" }, h("i"), h("i"), h("i")); box.append(sk);
   try {
     if (label !== "Git" && !LS("fe_token") && !["Sécurité"].includes(label))
-      box.append(h("div", { class: "fe-card" }, "Connecte ton compte GitHub pour commencer.", btn("Connecter GitHub", "key-round", () => go("Git"), "primary")));
+      box.append(onboarding());
     else if (PROJ.includes(label) && !cur()) box.append(h("div", { class: "fe-card" }, "Aucun projet sélectionné.", btn("Choisir un projet", "folder-git-2", () => document.getElementById("project-switcher").click(), "primary")));
     else { if (PROJ.includes(label) && window.DP.projBar) await window.DP.projBar(box, label); await fn(box); }
-  } catch (e) { box.append(h("div", { class: "fe-card" }, "Erreur : " + e.message)); }
+  } catch (e) { box.append(h("div", { class: "fe-card" }, "Erreur : " + e.message)); } finally { sk.remove(); }
   icons();
 }
 

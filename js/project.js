@@ -14,10 +14,10 @@ function chart({ type = "bar", labels, series, height = 170 }) {
   const tot = labels.map((_, i) => (type === "bar" ? series.reduce((a, s) => a + s.data[i], 0) : Math.max(...series.map((s) => s.data[i]))));
   const max = Math.max(1, ...tot);
   let g = "";
-  for (let k = 0; k <= 3; k++) { const y = pt + ih - (ih * k) / 3; g += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="#e6e9ed" stroke-dasharray="3 4"/><text x="${pl - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#7a7a7a">${Math.round((max * k) / 3)}</text>`; }
+  for (let k = 0; k <= 3; k++) { const y = pt + ih - (ih * k) / 3; g += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="currentColor" opacity=".15" stroke-dasharray="3 4"/><text x="${pl - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="currentColor" opacity=".6">${Math.round((max * k) / 3)}</text>`; }
   if (type === "bar") labels.forEach((l, i) => { let acc = 0; series.forEach((s) => { const v = s.data[i]; if (!v) return; const hh = (ih * v) / max; acc += hh; g += `<rect x="${pl + i * bw + bw * 0.15}" y="${pt + ih - acc}" width="${bw * 0.7}" height="${hh}" rx="4" fill="${s.color}"><title>${l} · ${s.name} : ${v}</title></rect>`; }); });
   else series.forEach((s) => { g += `<polyline fill="none" stroke="${s.color}" stroke-width="1.6" points="${s.data.map((v, i) => `${pl + bw * i + bw / 2},${pt + ih - (ih * v) / max}`).join(" ")}"/>` + s.data.map((v, i) => `<circle cx="${pl + bw * i + bw / 2}" cy="${pt + ih - (ih * v) / max}" r="2.3" fill="${s.color}"><title>${labels[i]} · ${s.name} : ${v}</title></circle>`).join(""); });
-  labels.forEach((l, i) => { if (i % Math.ceil(n / 7) === 0) g += `<text x="${pl + bw * i + bw / 2}" y="${H - 5}" text-anchor="middle" font-size="9" fill="#7a7a7a">${l}</text>`; });
+  labels.forEach((l, i) => { if (i % Math.ceil(n / 7) === 0) g += `<text x="${pl + bw * i + bw / 2}" y="${H - 5}" text-anchor="middle" font-size="9" fill="currentColor" opacity=".6">${l}</text>`; });
   const el = h("div", { class: "fe-chart" });
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">${g}</svg><div class="fe-legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join("")}</div>`;
   return el;
@@ -34,7 +34,7 @@ async function vOverview(root) {
   const kv = (k, ...v) => h("div", { class: "fe-kvb" }, h("span", { class: "fe-meta" }, k), h("div", {}, ...v));
   const host = url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "Pas encore déployé";
   root.append(h("div", { class: "fe-card fe-prod" },
-    h("div", { class: "fe-prodhead" }, h("b", {}, "Déploiement de production"), h("div", { class: "fe-acts" }, link(m.html_url, "GitHub"), btn("Rollback instantané", "undo-2", () => go("Déploiements")), url && link(url, "Visiter"))),
+    h("div", { class: "fe-prodhead" }, h("b", {}, "Déploiement de production"), h("div", { class: "fe-acts" }, link(m.html_url, "GitHub"), btn("Restauration instantanée", "undo-2", () => go("Déploiements")), url && link(url, "Visiter"))),
     h("div", { class: "fe-prodbody" }, h("div", { class: "fe-thumb" }, url && h("iframe", { src: url, loading: "lazy", sandbox: "", tabindex: "-1", title: "Aperçu" })),
       h("div", { class: "fe-details" }, kv("Déploiement", host), kv("Domaines", url ? h("a", { href: url, target: "_blank", rel: "noopener" }, host) : "—"),
         h("div", { class: "fe-two" }, kv("Statut", h("span", { class: "fe-scell" }, h("span", { class: "fe-dot " + (!last ? "" : last.status !== "completed" ? "run" : last.conclusion === "success" ? "ok" : "fail") }), last ? (last.status === "completed" ? (last.conclusion === "success" ? "Prêt" : last.conclusion) : "En cours") : "—")), kv("Créé", last ? ago(last.created_at) : "—")),
@@ -44,7 +44,7 @@ async function vOverview(root) {
   root.append(h("div", { class: "fe-grid3" },
     panel(`Recommandations ${reco.filter((x) => x[1]).length}/${reco.length}`, ...reco.map(([t, v]) => h("div", { class: "fe-reco" + (v ? " done" : "") }, ic(v ? "check" : "circle"), t))),
     panel("Observabilité · 14 j", stat("Déploiements", r14.length), stat("Échecs", f14), stat("Taux d'erreur", r14.length ? Math.round((f14 / r14.length) * 100) + " %" : "0 %")),
-    panel("Analytics", h("span", { class: "fe-meta" }, "Trafic, pages populaires et clones de ton dépôt."), btn("Voir Analytics", "bar-chart-3", () => go("Analytics")))));
+    panel("Statistiques", h("span", { class: "fe-meta" }, "Trafic, pages populaires et clones de ton dépôt."), btn("Voir les statistiques", "bar-chart-3", () => go("Statistiques")))));
   root.append(h("div", { class: "fe-sec" }, "Branches actives"), h("div", { class: "fe-list" }, brs.map((b) => h("div", { class: "fe-row" }, ic("git-branch"), h("div", { class: "fe-main" }, h("b", {}, b.name), h("span", { class: "fe-meta" }, b.protected ? "protégée" : "branche")), link(`https://github.com/${repo}/tree/${b.name}`, "Ouvrir")))));
   const ls = ok.slice(0, 20).reverse(), ok14 = perDay(runs, "created_at", ds, (r) => r.conclusion === "success"), ko14 = perDay(runs, "created_at", ds, (r) => r.conclusion === "failure");
   root.append(h("div", { class: "fe-sec" }, "Activité"), h("div", { class: "fe-grid" },
@@ -138,7 +138,7 @@ async function getMeta(repo) {
   const c = cache[repo]; if (c && Date.now() - c.t < 30000) return c.m;
   const m = await gh(`/repos/${repo}`); m._url = m.has_pages ? await pagesUrl(repo) : null; cache[repo] = { t: Date.now(), m }; return m;
 }
-const NEED = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements", "Releases", "Tags", "Changelog", "Comparer", "Support"];
+const NEED = ["Aperçu", "Déploiements", "Journaux", "Fichiers", "Domaines", "Variables d'environnement", "Statistiques", "Général", "Environnements", "Publications", "Tags", "Changelog", "Comparer", "Support"];
 const syncSwitcher = () => {
   swName.textContent = cur() ? short(cur()) : "Choisir un projet";
   sw.classList.toggle("attn", !cur());
@@ -216,7 +216,7 @@ async function vReleases(root) {
   const tag = h("input", { class: "fe-input", placeholder: "v1.0.0" }), name = h("input", { class: "fe-input", placeholder: "Titre (optionnel)" }), notes = h("textarea", { class: "fe-input fe-ta", placeholder: "Notes de version (Markdown). Vide = générées automatiquement." });
   root.append(panel("Publier une release", h("span", { class: "fe-meta" }, `Crée un tag sur ${m.default_branch} et publie la release GitHub.`), h("div", { class: "fe-bar", style: "margin:0" }, tag, name), notes,
     btn("Publier la release", "tag", () => act(async () => { if (!tag.value.trim()) throw new Error("Indique un nom de tag."); await gh(`/repos/${repo}/releases`, { method: "POST", body: { tag_name: tag.value.trim(), name: name.value || tag.value.trim(), body: notes.value, target_commitish: m.default_branch, generate_release_notes: !notes.value } }); render(S.cur); }, "Release publiée"), "primary")));
-  root.append(h("div", { class: "fe-sec" }, "Releases"), rel.length ? h("div", { class: "fe-list" }, rel.filter((x) => match(x.tag_name, x.name)).map((x) => h("div", { class: "fe-row" }, ic("package"), h("div", { class: "fe-main" }, h("b", {}, x.name || x.tag_name), h("span", { class: "fe-meta" }, `${x.tag_name} · ${ago(x.published_at || x.created_at)}${x.prerelease ? " · pré-version" : ""}`)), link(x.html_url, "Ouvrir"),
+  root.append(h("div", { class: "fe-sec" }, "Publications"), rel.length ? h("div", { class: "fe-list" }, rel.filter((x) => match(x.tag_name, x.name)).map((x) => h("div", { class: "fe-row" }, ic("package"), h("div", { class: "fe-main" }, h("b", {}, x.name || x.tag_name), h("span", { class: "fe-meta" }, `${x.tag_name} · ${ago(x.published_at || x.created_at)}${x.prerelease ? " · pré-version" : ""}`)), link(x.html_url, "Ouvrir"),
     btn("Supprimer", "trash-2", () => confirm("Supprimer cette release ?") && act(async () => { await gh(`/repos/${repo}/releases/${x.id}`, { method: "DELETE" }); render(S.cur); }, "Release supprimée"))))) : empt("package", "Aucune release", "Publie ta première version pour la retrouver ici."));
 }
 async function vTags(root) {
@@ -264,7 +264,7 @@ async function vLogs(root) {
     con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", { class: "k-" + e.k }, e.k), h("span", {}, e.m)))); if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement.")); };
   const box = (n, c) => h("label", { class: "fe-check" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { on[n] = e.target.checked; draw(); } }), n, h("span", { class: "fe-meta" }, String(c)));
   const side = h("div", { class: "fe-filters" }, h("b", {}, "Filtres"), h("div", { class: "fe-sec" }, "Source"), ...Object.entries(K).map(([k, n]) => box(n, ev.filter((e) => e.k === k).length)), h("div", { class: "fe-sec" }, "Niveau"), ...["Info", "Avertissement", "Erreur"].map((n) => box(n, ev.filter((e) => lv(e) === n).length)));
-  const bar = h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Live", "play-circle", () => { S.live = !S.live; render(S.cur); }, S.live ? "primary" : ""), btn("Actualiser", "refresh-cw", () => render(S.cur)),
+  const bar = h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Direct", "play-circle", () => { S.live = !S.live; render(S.cur); }, S.live ? "primary" : ""), btn("Actualiser", "refresh-cw", () => render(S.cur)),
     btn("Télécharger", "download", () => { const a = h("a", { href: URL.createObjectURL(new Blob([shown.map((e) => `${e.t} ${e.k} ${e.m}`).join("\n")], { type: "text/plain" })), download: "logs.txt" }); a.click(); }));
   root.append(h("div", { class: "fe-logs" }, side, h("div", {}, bar, con)));
   draw();
@@ -272,10 +272,10 @@ async function vLogs(root) {
 }
 function area(labels, data) {
   const W = 1100, H = 260, pl = 34, pb = 22, pt = 10, n = data.length, max = Math.max(1, ...data), x = (i) => pl + ((W - pl - 8) * i) / Math.max(1, n - 1), y = (v) => pt + (H - pt - pb) * (1 - v / max);
-  let g = ""; for (let k = 0; k <= 3; k++) { const yy = pt + ((H - pt - pb) * k) / 3; g += `<line x1="${pl}" x2="${W - 8}" y1="${yy}" y2="${yy}" stroke="#e6e9ed"/><text x="${pl - 6}" y="${yy + 3}" text-anchor="end" font-size="10" fill="#7a7a7a">${Math.round(max * (1 - k / 3))}</text>`; }
+  let g = ""; for (let k = 0; k <= 3; k++) { const yy = pt + ((H - pt - pb) * k) / 3; g += `<line x1="${pl}" x2="${W - 8}" y1="${yy}" y2="${yy}" stroke="currentColor" opacity=".15"/><text x="${pl - 6}" y="${yy + 3}" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">${Math.round(max * (1 - k / 3))}</text>`; }
   const pts = data.map((v, i) => `${x(i)},${y(v)}`).join(" L");
-  g += `<path class="fe-fill" d="M${x(0)},${H - pb} L${pts} L${x(n - 1)},${H - pb}Z" fill="#111" opacity=".07"/><polyline class="fe-stroke" fill="none" stroke="#111" stroke-width="1.6" points="${pts.replace(/ L/g, " ")}"/>`;
-  labels.forEach((l, i) => { if (i % 2 === 0) g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#7a7a7a">${l}</text>`; });
+  g += `<path class="fe-fill" d="M${x(0)},${H - pb} L${pts} L${x(n - 1)},${H - pb}Z" fill="currentColor" opacity=".07"/><polyline class="fe-stroke" fill="none" stroke="currentColor" stroke-width="1.6" points="${pts.replace(/ L/g, " ")}"/>`;
+  labels.forEach((l, i) => { if (i % 2 === 0) g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="currentColor" opacity=".6">${l}</text>`; });
   const el = h("div", { class: "fe-area" }); el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">${g}</svg>`; return el;
 }
 async function vAnalytics(root) {
@@ -292,7 +292,7 @@ async function vAnalytics(root) {
     pick(0);
   } catch (e) { root.append(panel("Trafic indisponible", h("span", { class: "fe-meta" }, e.message + " (les stats de trafic demandent les droits d'écriture sur le dépôt)."))); }
 }
-Object.assign(VIEWS, { "Releases": vReleases, "Tags": vTags, "Changelog": (r) => cmpView(r, true), "Comparer": (r) => cmpView(r, false), "Support": vSupport, "Logs": vLogs, "Analytics": vAnalytics });
+Object.assign(VIEWS, { "Publications": vReleases, "Tags": vTags, "Changelog": (r) => cmpView(r, true), "Comparer": (r) => cmpView(r, false), "Support": vSupport, "Journaux": vLogs, "Statistiques": vAnalytics });
 async function vSecurity(root) {
   const item = (icon, t, d) => h("div", { class: "fe-secitem" }, h("span", { class: "fe-iconbox" }, ic(icon)), h("div", {}, h("b", {}, t), h("p", { class: "fe-meta" }, d)));
   root.append(h("div", { class: "fe-settings" }, h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" },

@@ -10,6 +10,12 @@ Un tableau de bord à la Vercel pour **déployer et gérer tes sites GitHub Page
 - **Fichiers** : parcours, édition et commit directement sur la branche par défaut, import de fichiers en un seul commit
 - **Domaines**, **variables Actions**, **releases**, **tags**, **changelog**, **comparaison** de branches, **support** (issues), **analytics** (trafic du dépôt)
 
+## Nouveautés
+
+- **Thème** automatique / clair / sombre (bouton en bas à droite), **palette de commandes** (Ctrl/Cmd + K), **routage par hash** (`#deploiements`, `#fichiers`…)
+- **Build automatique** : si le projet a un `package.json`, le workflow installe, lance `npm run build` et publie `dist/`, `build/`, `out/`, `public/` ou `_site/`. Réglable avec les variables Actions `BUILD_COMMAND` et `OUTPUT_DIR` (page *Variables d'environnement*). Pour un projet existant, clique « Déploiement auto » pour réinstaller le workflow. Les previews de PR sont servies sous `/pr-preview/pr-N/` : configure la `base` de ton framework si besoin.
+- Onboarding au premier lancement, squelettes de chargement, erreurs GitHub traduites
+
 ## Lancer en local
 
 Le projet est statique, il suffit de servir le dossier :
