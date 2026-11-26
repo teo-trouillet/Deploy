@@ -1,0 +1,50 @@
+name: Deploy
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+  workflow_dispatch:
+concurrency: preview-${{ github.ref }}
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: github.event.action != 'closed'
+        with:
+          node-version: 22
+      - name: Build
+        id: build
+        if: github.event.action != 'closed'
+        env:
+          BUILD_COMMAND: ${{ vars.BUILD_COMMAND }}
+          OUTPUT_DIR: ${{ vars.OUTPUT_DIR }}
+        run: |
+          DIR="$OUTPUT_DIR"
+          if [ -f package.json ]; then
+            npm ci || npm install
+            if [ -n "$BUILD_COMMAND" ]; then bash -c "$BUILD_COMMAND"
+            elif grep -q '"build"' package.json; then npm run build; fi
+            if [ -z "$DIR" ]; then for d in dist build out public _site; do [ -d "$d" ] && DIR="$d" && break; done; fi
+          fi
+          echo "dir=${DIR:-.}" >> "$GITHUB_OUTPUT"
+      - name: Production
+        if: github.event_name != 'pull_request'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: ${{ steps.build.outputs.dir }}
+          branch: gh-pages
+          clean-exclude: pr-preview/
+          force: false
+      - name: Preview
+        if: github.event_name == 'pull_request'
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ${{ steps.build.outputs.dir }}
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
