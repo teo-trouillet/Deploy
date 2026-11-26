@@ -827,7 +827,8 @@ body.header-hidden {
 
 .content {
     transition:
-        grid-template-rows 800ms cubic-bezier(.22, 1, .36, 1);
+        grid-template-rows 800ms cubic-bezier(.22, 1, .36, 1),
+        margin-right var(--nav-duration) var(--group-animation-easing);
 }
 
 .content-header {
@@ -891,6 +892,14 @@ body.header-hidden .content-header {
 body.nav-collapsed .content {
     margin-right: var(--nav-collapsed-width);
     min-width: 0;
+}
+
+/* La réservation du rail droit suit le repli au lieu de réduire le contenu
+   instantanément au clic. Sans cette transition, la grille anime la navbar
+   mais le panneau principal saute de largeur, ce qui casse l'impression
+   d'un repli fluide. */
+.content {
+    margin-right: 0;
 }
 
 body.nav-collapsed .content-header {
