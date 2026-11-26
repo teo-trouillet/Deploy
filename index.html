@@ -304,6 +304,10 @@
                 );
             });
 
+            // Ouvre automatiquement le groupe de la page active.
+            const groupBtn = document.querySelector(".nav-item.active")?.closest(".nav-group")?.querySelector(".nav-group-title");
+            if (groupBtn && groupBtn.getAttribute("aria-expanded") === "false" && !document.body.classList.contains("nav-collapsed")) groupBtn.click();
+
             contentBody.replaceChildren();
 
             if (label === "Accueil") {
@@ -327,6 +331,12 @@
             contentBody.appendChild(page);
             if (window.Deploy) window.Deploy.render(label, page);
         }
+
+        // Infobulle sur chaque onglet : explique à quoi il sert.
+        document.querySelectorAll(".nav-item").forEach((item) => {
+            const tip = pageDescriptions[item.querySelector("span")?.textContent.trim()];
+            if (tip) item.title = tip;
+        });
 
         document.querySelectorAll(".nav-item").forEach((item) => {
             item.addEventListener("click", (event) => {

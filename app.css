@@ -184,3 +184,9 @@ body { height: 100vh; height: 100dvh; min-height: 0; grid-template-rows: minmax(
 .content-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c8d0d9 transparent; }
 .content-body::-webkit-scrollbar { width: 8px; } .content-body::-webkit-scrollbar-thumb { background: #c8d0d9; border-radius: 8px; }
 .content-body:has(.app-view) { padding-bottom: 32px; }
+
+/* Repères d'usage */
+.nav-item.needs-project { opacity: .45; }
+.project-switcher.attn { animation: fe-attn 2s ease-in-out infinite; }
+@keyframes fe-attn { 50% { box-shadow: 0 0 0 4px rgba(47, 111, 237, .18); } }
+@media (prefers-reduced-motion: reduce) { .project-switcher.attn { animation: none; } }

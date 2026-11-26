@@ -169,7 +169,12 @@ async function getMeta(repo) {
   const c = cache[repo]; if (c && Date.now() - c.t < 30000) return c.m;
   const m = await gh(`/repos/${repo}`); m._url = m.has_pages ? await pagesUrl(repo) : null; cache[repo] = { t: Date.now(), m }; return m;
 }
-const syncSwitcher = () => { swName.textContent = cur() ? short(cur()) : "Choisir un projet"; };
+const NEED = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements"];
+const syncSwitcher = () => {
+  swName.textContent = cur() ? short(cur()) : "Choisir un projet";
+  sw.classList.toggle("attn", !cur());
+  document.querySelectorAll(".nav-item").forEach((i) => i.classList.toggle("needs-project", !cur() && NEED.includes(i.querySelector("span")?.textContent.trim())));
+};
 function setProject(repo, label = "Aperçu") { SET("fe_repo", repo); syncSwitcher(); go(label); }
 async function projBar(box, label) {
   const repo = cur(), m = await getMeta(repo);
