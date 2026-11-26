@@ -59,7 +59,7 @@ async function vPreviews(root) {
   let ready = false;
   try { ready = atob((await gh(`/repos/${repo}/contents/.github/workflows/deploy.yml`)).content.replace(/\n/g, "")).includes("pr-preview"); } catch (e) { /* absent */ }
   if (!ready) return root.append(panel("Previews par pull request", h("span", { class: "fe-meta" }, "Chaque PR obtient sa propre URL de test, supprimée automatiquement à la fermeture. Il faut installer le workflow (déploiement auto + previews)."),
-    btn("Activer les previews", "git-pull-request", () => act(async () => { const L = loading("Activation des previews"); try { await setupAuto(repo, L); } finally { L.close(); } render(S.cur); }), "primary")));
+    btn("Activer les previews", "git-pull-request", () => act(async () => { const L = loading("Activation des previews", 3); try { await setupAuto(repo, L); } finally { L.close(); } render(S.cur); }), "primary")));
   const base = ((await pagesUrl(repo)) || `https://${m.owner.login}.github.io/${m.name}/`).replace(/\/$/, "");
   const [prs, dirs, brs] = await Promise.all([gh(`/repos/${repo}/pulls?state=open&per_page=30`), gh(`/repos/${repo}/contents/pr-preview?ref=gh-pages`).catch(() => []), gh(`/repos/${repo}/branches?per_page=100`)]);
   const up = new Set(dirs.map((x) => x.name));
@@ -107,7 +107,7 @@ function commitCard(repo, m, path) {
   return panel("Commit et push", h("span", { class: "fe-meta" }, `Importe un ou plusieurs fichiers : un seul commit est poussé sur ${m.default_branch}${path ? " dans /" + path : ""}, ce qui déclenche le déploiement.`), inp,
     h("div", { class: "fe-bar", style: "margin:0" }, msg, btn("Commit et push", "upload", () => act(async () => {
       const files = [...inp.files]; if (!files.length) throw new Error("Choisis au moins un fichier.");
-      const L = loading("Commit sur " + m.default_branch);
+      const L = loading("Commit sur " + m.default_branch, 4);
       try {
         L.step("Lecture de la branche");
         const ref = await gh(`/repos/${repo}/git/ref/heads/${m.default_branch}`), head = await gh(`/repos/${repo}/git/commits/${ref.object.sha}`);
@@ -182,7 +182,7 @@ async function projBar(box, label) {
   document.getElementById("content-title").textContent = `/ ${m.name} / ${label}`;
   box.append(h("div", { class: "fe-head" }, h("div", { class: "fe-main" }, h("b", { class: "fe-title" }, m.name), h("span", { class: "fe-meta" }, `${m.owner.login} · ${m.private ? "privé" : "public"} · ${m.default_branch}`)),
     btn("Déployer", "rocket", () => act(async () => { await deploy(repo, m.default_branch); go("Déploiements"); }), "primary"),
-    btn("Déploiement auto", "git-branch", () => confirm("Installer le workflow (déploiement à chaque push + previews par PR) ?") && act(async () => { const L = loading("Configuration de " + m.name); try { await setupAuto(repo, L); } finally { L.close(); } delete cache[repo]; go(label); }, "Déploiement auto et previews activés")),
+    btn("Déploiement auto", "git-branch", () => confirm("Installer le workflow (déploiement à chaque push + previews par PR) ?") && act(async () => { const L = loading("Configuration de " + m.name, 3); try { await setupAuto(repo, L); } finally { L.close(); } delete cache[repo]; go(label); }, "Déploiement auto et previews activés")),
     m._url && link(m._url, "Visiter"), link(m.html_url, "GitHub")));
 }
 

@@ -254,3 +254,17 @@ body { height: 100vh; height: 100dvh; min-height: 0; grid-template-rows: minmax(
 /* Support */
 .fe-state { display: inline-flex; flex: none; } .fe-state svg { width: 17px; height: 17px; stroke-width: 1.6; } .fe-state.open { color: var(--ok); } .fe-state.closed { color: #8250df; }
 .fe-card textarea.fe-ta, .fe-card .fe-input { width: 100%; }
+
+/* ===== Écran de chargement (création de projet, déploiements) ===== */
+.fe-overlay { background: rgba(12, 14, 20, .38); backdrop-filter: blur(10px) saturate(1.1); transition: opacity .22s ease; } .fe-overlay.out { opacity: 0; }
+.fe-loader { width: 400px; max-width: calc(100vw - 40px); padding: 30px 30px 26px; gap: 6px; align-items: stretch; border: 1px solid rgba(255, 255, 255, .6); border-radius: 20px; background: #fff; box-shadow: 0 30px 80px -20px rgba(7, 13, 17, .45); animation: fe-pop .38s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes fe-pop { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+.fe-lico { width: 46px; height: 46px; display: grid; place-items: center; margin-bottom: 8px; border-radius: 14px; background: linear-gradient(145deg, #2b2b2b, #0b0b0b); color: #fff; box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .55); animation: fe-float 2.4s ease-in-out infinite; } .fe-lico svg { width: 21px; height: 21px; stroke-width: 1.6; }
+@keyframes fe-float { 50% { transform: translateY(-4px); } }
+.fe-ltitle { font-size: 1.05rem; font-weight: 600; letter-spacing: -.015em; } .fe-loader > .fe-meta { font-size: .78rem; }
+.fe-progress { height: 4px; margin: 14px 0 12px; border-radius: 4px; background: #eceef1; overflow: hidden; } .fe-progress i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #111, #4a5568); transition: width .6s cubic-bezier(.22, 1, .36, 1); }
+.fe-steps-list { gap: 2px; } .fe-steps-list li::before, .fe-steps-list li.done::before { content: none; }
+.fe-steps-list li { display: flex; align-items: center; gap: 12px; padding: 7px 2px; font-size: .82rem; font-weight: 500; animation: fe-in .35s cubic-bezier(.22, 1, .36, 1) both; transition: color .25s ease; } .fe-steps-list li.done { color: var(--user-role-color); font-weight: 400; }
+.fe-lstate { position: relative; width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 2px solid #e2e5e9; border-top-color: #111; animation: fe-rot .8s linear infinite; transition: background-color .25s ease, border-color .25s ease; } .fe-lstate svg { width: 11px; height: 11px; stroke-width: 3; opacity: 0; transform: scale(.4); transition: opacity .2s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1); }
+.fe-steps-list li.done .fe-lstate { animation: none; background: var(--ok, #1f9d55); border-color: var(--ok, #1f9d55); color: #fff; } .fe-steps-list li.done .fe-lstate svg { opacity: 1; transform: scale(1); }
+@media (prefers-reduced-motion: reduce) { .fe-loader, .fe-lico { animation: none; } .fe-lstate { animation-duration: 2s; } }

@@ -23,11 +23,18 @@ function toast(msg, err) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
-function loading(title) {
-  const ul = h("ul", { class: "fe-steps-list" });
-  const o = h("div", { class: "fe-overlay" }, h("div", { class: "fe-loader" }, h("div", { class: "fe-spin" }), h("b", {}, title), ul));
-  document.body.appendChild(o);
-  return { step(t) { ul.querySelector("li:last-child")?.classList.add("done"); ul.append(h("li", {}, t)); }, close() { o.remove(); } };
+function loading(title, total = 6) {
+  const ul = h("ul", { class: "fe-steps-list" }), bar = h("i"), n = { v: 0 };
+  const o = h("div", { class: "fe-overlay" }, h("div", { class: "fe-loader" }, h("span", { class: "fe-lico" }, ic("rocket")), h("b", { class: "fe-ltitle" }, title),
+    h("span", { class: "fe-meta" }, "Ça prend environ une minute. Laisse cette fenêtre ouverte."), h("div", { class: "fe-progress" }, bar), ul));
+  document.body.appendChild(o); icons();
+  const set = (f) => (bar.style.width = Math.max(4, Math.min(100, (f / total) * 100)) + "%");
+  set(0.4);
+  return {
+    step(t) { ul.querySelector("li:last-child")?.classList.add("done"); ul.append(h("li", {}, h("span", { class: "fe-lstate" }, ic("check")), t)); n.v++; set(n.v - 0.5); icons(); },
+    done() { ul.querySelectorAll("li").forEach((li) => li.classList.add("done")); set(total); },
+    close() { o.classList.add("out"); setTimeout(() => o.remove(), 220); },
+  };
 }
 const ago = (d) => {
   const s = (new Date(d) - Date.now()) / 1000, f = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
@@ -160,7 +167,7 @@ function newProjectForm() {
         const html = `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`;
         await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: btoa(unescape(encodeURIComponent(html))), branch: repo.default_branch } });
         await setupAuto(repo.full_name, L);
-        L.step("Site en ligne");
+        L.step("Site en ligne"); L.done();
         S.repos = null;
         await new Promise((r) => setTimeout(r, 700)); L.close(); window.DP.setProject(repo.full_name, "Déploiements");
       } catch (e) { L.close(); throw e; }
