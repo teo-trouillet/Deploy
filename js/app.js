@@ -213,9 +213,10 @@ async function vProjects(root) {
   side.append(h("div", { class: "fe-sec" }, "Utilisation"), h("div", { class: "fe-card" }, [["Projets", all.length], ["Pages actif", all.filter((r) => r.has_pages).length], ["Privés", all.filter((r) => r.private).length]].map(([k, v]) => h("div", { class: "fe-kv" }, h("span", {}, k), h("b", {}, String(v))))),
     h("div", { class: "fe-sec" }, "Alertes"), h("div", { class: "fe-card fe-center" }, ic("bell"), alerts),
     h("div", { class: "fe-sec" }, "Projets récents"), h("div", { class: "fe-list" }, all.slice(0, 3).map((r) => h("div", { class: "fe-row fe-click", onclick: () => window.DP.setProject(r.full_name) }, ic("folder-git-2"), h("div", { class: "fe-main" }, h("b", {}, r.name), h("span", { class: "fe-meta" }, "push " + ago(r.pushed_at)))))));
-  grid.append(...rs.map((r) => h("div", { class: "fe-pcard", onclick: () => window.DP.setProject(r.full_name) },
+  grid.append(...rs.map((r) => h("div", { class: "fe-proj", tabindex: "0", onclick: () => window.DP.setProject(r.full_name), onkeydown: (e) => e.key === "Enter" && window.DP.setProject(r.full_name) },
     h("div", { class: "fe-phead" }, h("span", { class: "fe-avatar" }, r.name[0].toUpperCase()), h("div", { class: "fe-main" }, h("b", {}, r.name), h("span", { class: "fe-meta" }, r.has_pages ? `${r.owner.login}.github.io/${r.name}` : "Pas de déploiement")), (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : "") }))),
     (msgs[r.full_name] = h("div", { class: "fe-pmsg" }, ic("git-commit-horizontal"), r.description || "—")),
+    h("div", { class: "fe-badges" }, h("span", { class: "fe-badge" }, r.private ? "Privé" : "Public"), r.language && h("span", { class: "fe-badge" }, r.language), r.has_pages && h("span", { class: "fe-badge ok" }, "Pages")),
     h("div", { class: "fe-meta fe-pfoot" }, ic("git-branch"), `${r.full_name} · ${ago(r.pushed_at)}`))));
   if (!rs.length) grid.append(h("div", { class: "fe-empty" }, "Aucun projet."));
   icons();

@@ -1,0 +1,28 @@
+/* Finition « pro » : typographie, cartes, listes, focus, états vides. Chargé en dernier. */
+.app-view > h1{font-size:1.6rem;font-weight:650;letter-spacing:-.025em;margin:0 0 4px}
+.app-view .fe-desc{color:var(--user-role-color);font-size:.88rem;margin:0 0 22px;max-width:62ch}
+.fe-sec{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--user-role-color);margin:28px 0 10px}
+.fe-cards{grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+.fe-proj{gap:12px;outline:none;min-width:0}
+.fe-proj:focus-visible{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.fe-proj .fe-phead{align-items:flex-start}.fe-proj .fe-phead .fe-main{min-width:0}
+.fe-proj .fe-phead b{font-size:.95rem;letter-spacing:-.01em;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fe-proj .fe-pmsg{min-height:34px}
+.fe-proj .fe-pfoot{margin-top:auto;padding-top:10px;border-top:1px solid var(--line-2)}
+.fe-badges{display:flex;flex-wrap:wrap;gap:6px}
+.fe-badge{font-size:.68rem;font-weight:550;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--user-role-color);background:var(--surface-2)}
+.fe-badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line));background:color-mix(in srgb,var(--ok) 9%,transparent)}
+.fe-list{border-radius:12px;overflow:hidden}
+.fe-list>.fe-row{transition:background .15s}.fe-list>.fe-row:hover{background:var(--soft)}
+.fe-list>.fe-row+.fe-row{border-top:1px solid var(--line-2)}
+.fe-click{cursor:pointer}
+.fe-btn{transition:background .15s,border-color .15s,transform .1s}.fe-btn:active{transform:translateY(1px)}
+.fe-btn:focus-visible,.fe-input:focus-visible,.fe-select:focus-visible,.fe-editor:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fe-input:focus,.fe-select:focus,.fe-editor:focus{border-color:var(--accent)}
+.fe-btn:disabled{opacity:.5;cursor:not-allowed}
+.fe-empty{padding:44px 16px;text-align:center;border:1px dashed var(--line);border-radius:12px;color:var(--user-role-color);font-size:.85rem;grid-column:1/-1}
+.fe-stat b{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.fe-mono,.fe-log,.fe-console{font-variant-numeric:tabular-nums}
+.fe-card>b:first-child{font-size:.9rem}
+.content-body{scrollbar-width:thin}
+@media (max-width:700px){.app-view>h1{font-size:1.3rem}.fe-cards{grid-template-columns:1fr}}
