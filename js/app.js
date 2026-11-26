@@ -31,17 +31,21 @@ function toast(msg, err) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
+// Carte de progression non bloquante (bas à droite) : étape courante, temps écoulé, état final.
 function loading(title, total = 6) {
-  const ul = h("ul", { class: "fe-steps-list" }), bar = h("i"), n = { v: 0 };
-  const o = h("div", { class: "fe-overlay" }, h("div", { class: "fe-loader" }, h("span", { class: "fe-lico" }, ic("rocket")), h("b", { class: "fe-ltitle" }, title),
-    h("span", { class: "fe-meta" }, "Ça prend environ une minute. Laisse cette fenêtre ouverte."), h("div", { class: "fe-progress" }, bar), ul));
-  document.body.appendChild(o); icons();
-  const set = (f) => (bar.style.width = Math.max(4, Math.min(100, (f / total) * 100)) + "%");
-  set(0.4);
+  const t0 = Date.now(), n = { v: 0 };
+  const bar = h("i"), line = h("span", { class: "fe-pline" }, "Démarrage…"), time = h("span", { class: "fe-ptime" }, "0 s");
+  const o = h("div", { class: "fe-pcard", role: "status", "aria-live": "polite" },
+    h("div", { class: "fe-ptop" }, h("span", { class: "fe-pspin", "aria-hidden": "true" }), h("b", {}, title), time),
+    h("div", { class: "fe-pbar" }, bar), line);
+  document.body.appendChild(o);
+  const tick = setInterval(() => (time.textContent = Math.round((Date.now() - t0) / 1000) + " s"), 1000);
+  const set = (f) => (bar.style.width = Math.max(6, Math.min(100, (f / total) * 100)) + "%");
+  set(0.3);
   return {
-    step(t) { ul.querySelector("li:last-child")?.classList.add("done"); ul.append(h("li", {}, h("span", { class: "fe-lstate" }, ic("check")), t)); n.v++; set(n.v - 0.5); icons(); },
-    done() { ul.querySelectorAll("li").forEach((li) => li.classList.add("done")); set(total); },
-    close() { o.classList.add("out"); setTimeout(() => o.remove(), 220); },
+    step(t) { n.v++; line.textContent = `${Math.min(n.v, total)}/${total} · ${t}`; set(n.v - 0.4); },
+    done() { clearInterval(tick); o.classList.add("ok"); line.textContent = "Terminé"; set(total); },
+    close() { clearInterval(tick); o.classList.add("out"); setTimeout(() => o.remove(), 250); },
   };
 }
 const ago = (d) => {

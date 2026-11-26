@@ -314,3 +314,20 @@ body { height: 100vh; height: 100dvh; min-height: 0; grid-template-rows: minmax(
   .fe-split,.fe-grid,.fe-grid3,.fe-logs,.fe-prodbody{grid-template-columns:1fr!important}
   .fe-loader{width:calc(100vw - 32px)}
 }
+
+/* Carte de progression */
+.fe-pcard{position:fixed;right:20px;bottom:20px;z-index:100;width:min(320px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);box-shadow:0 12px 40px -12px rgba(7,13,17,.35);font-family:"Inter",sans-serif;animation:fe-up .3s cubic-bezier(.22,1,.36,1) both;transition:opacity .25s,transform .25s}
+.fe-pcard.out{opacity:0;transform:translateY(8px)}
+.fe-ptop{display:flex;align-items:center;gap:10px;font-size:.85rem}.fe-ptop b{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fe-ptime{font-size:.72rem;color:var(--user-role-color);font-variant-numeric:tabular-nums}
+.fe-pspin{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--ink);animation:fe-rot .8s linear infinite}
+.fe-pbar{height:3px;margin:12px 0 8px;border-radius:3px;background:var(--line-2);overflow:hidden}
+.fe-pbar i{display:block;height:100%;width:0;border-radius:3px;background:var(--ink);transition:width .5s cubic-bezier(.22,1,.36,1)}
+.fe-pline{display:block;font-size:.75rem;color:var(--user-role-color);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fe-pcard.ok .fe-pspin{animation:none;border-color:#1f9d55;background:#1f9d55;position:relative}
+.fe-pcard.ok .fe-pspin::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.fe-pcard.ok .fe-pbar i{background:#1f9d55}
+@keyframes fe-rot{to{transform:rotate(360deg)}}
+@keyframes fe-up{from{opacity:0;transform:translateY(12px)}}
+@media (prefers-reduced-motion:reduce){.fe-pcard,.fe-pspin{animation:none}.fe-pspin{border-top-color:var(--line)}}
+@media (max-width:800px){.fe-pcard{right:16px;bottom:84px}}
