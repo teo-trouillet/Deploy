@@ -125,8 +125,8 @@ async function vConnect(root) {
 }
 
 async function vProjects(root) {
-  const form = newProjectForm(root), grid = h("div", { class: "fe-cards" }), side = h("div", { class: "fe-side" });
-  root.append(h("div", { class: "fe-bar" }, btn("Nouveau projet", "plus", () => form.toggleAttribute("hidden"), "primary")), form, h("div", { class: "fe-split" }, side, h("div", {}, h("div", { class: "fe-sec" }, "Projets"), grid)));
+  const form = newProjectForm(root); form.removeAttribute("hidden"); form.classList.add("fe-hero"); const grid = h("div", { class: "fe-cards" }), side = h("div", { class: "fe-side" });
+  root.append(form, h("div", { class: "fe-split" }, side, h("div", {}, h("div", { class: "fe-sec" }, "Projets"), grid)));
   const all = await repos(), rs = all.filter((r) => match(r.full_name, r.description)), dots = {}, msgs = {};
   const alerts = h("div", { class: "fe-meta" }, "Vérification…");
   side.append(h("div", { class: "fe-sec" }, "Utilisation"), h("div", { class: "fe-card" }, [["Projets", all.length], ["Pages actif", all.filter((r) => r.has_pages).length], ["Privés", all.filter((r) => r.private).length]].map(([k, v]) => h("div", { class: "fe-kv" }, h("span", {}, k), h("b", {}, String(v))))),
@@ -148,7 +148,7 @@ async function vProjects(root) {
 
 function newProjectForm() {
   const name = h("input", { class: "fe-input", placeholder: "nom-du-site" });
-  return h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", {}, "Nouveau site"), h("div", { class: "fe-meta" }, "Crée le dépôt, une page d'accueil, le déploiement auto, les previews par PR et GitHub Pages."),
+  return h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", { class: "fe-herotitle" }, "Crée ton prochain projet"), h("div", { class: "fe-meta" }, "Un nom, un clic : dépôt GitHub, page d'accueil, déploiement auto, previews par PR et GitHub Pages."),
     h("div", { class: "fe-bar", style: "margin:0" }, name, btn("Créer et déployer", "rocket", () => act(async () => {
       const n = name.value.trim(); if (!/^[\w.-]+$/.test(n)) throw new Error("Nom invalide (lettres, chiffres, - _ .).");
       const L = loading("Création de " + n);
@@ -273,7 +273,7 @@ async function vAnalytics(root) {
     h("div", { class: "fe-bars" }, v.views.map((x) => h("div", { title: `${x.timestamp.slice(0, 10)} : ${x.count}`, style: `height:${(x.count / max) * 100}%` })))));
 }
 
-const PROJ = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements"];
+const PROJ = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements", "Releases", "Tags", "Changelog", "Comparer", "Support"];
 const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t));
 const VIEWS = {
   "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
@@ -295,7 +295,7 @@ async function render(target) {
   const box = h("div");
   root.append(box);
   try {
-    if (label !== "Git" && !LS("fe_token") && !["Sécurité", "Support"].includes(label))
+    if (label !== "Git" && !LS("fe_token") && !["Sécurité"].includes(label))
       box.append(h("div", { class: "fe-card" }, "Connecte ton compte GitHub pour commencer.", btn("Connecter GitHub", "key-round", () => go("Git"), "primary")));
     else if (PROJ.includes(label) && !cur()) box.append(h("div", { class: "fe-card" }, "Aucun projet sélectionné.", btn("Choisir un projet", "folder-git-2", () => document.getElementById("project-switcher").click(), "primary")));
     else { if (PROJ.includes(label) && window.DP.projBar) await window.DP.projBar(box, label); await fn(box); }
@@ -307,7 +307,7 @@ window.Deploy = {
   render: (label, root) => {
     if (label === "Projets") { if (S.keep) S.keep = false; else S.proj = null; } root.querySelector("p")?.classList.add("fe-desc"); return render({ label, root }); },
   action: (a) => {
-    if (a === "new") { go("Projets"); setTimeout(() => document.getElementById("fe-new")?.removeAttribute("hidden"), 300); }
+    if (a === "new") { go("Projets"); setTimeout(() => { const f = document.getElementById("fe-new"); f?.removeAttribute("hidden"); f?.querySelector("input")?.focus(); }, 300); }
     if (a === "refresh") { S.repos = null; S.cur && render(S.cur); }
     if (a === "deploy") act(() => { if (!cur()) throw new Error("Choisis d'abord un projet."); return deploy(cur()); });
   },

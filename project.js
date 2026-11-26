@@ -169,7 +169,7 @@ async function getMeta(repo) {
   const c = cache[repo]; if (c && Date.now() - c.t < 30000) return c.m;
   const m = await gh(`/repos/${repo}`); m._url = m.has_pages ? await pagesUrl(repo) : null; cache[repo] = { t: Date.now(), m }; return m;
 }
-const NEED = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements"];
+const NEED = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements", "Releases", "Tags", "Changelog", "Comparer", "Support"];
 const syncSwitcher = () => {
   swName.textContent = cur() ? short(cur()) : "Choisir un projet";
   sw.classList.toggle("attn", !cur());
@@ -218,6 +218,94 @@ async function vGeneral(root) {
     set("Visibilité", "Détermine qui peut voir le code du dépôt.", h("div", { class: "fe-field" }, h("code", {}, m.private ? "Privé" : "Public"), link(m.html_url, "Ouvrir sur GitHub")), "Gérée par GitHub.")));
 }
 Object.assign(VIEWS, { "Général": vGeneral, "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
+/* ---- Versions, Support, Logs et Analytics façon Vercel ---- */
+const refs = async (repo) => { const [b, t] = await Promise.all([gh(`/repos/${repo}/branches?per_page=100`), gh(`/repos/${repo}/tags?per_page=100`).catch(() => [])]); return [...t.map((x) => x.name), ...b.map((x) => x.name)]; };
+const sel = (opts, val) => h("select", { class: "fe-select" }, opts.map((o) => h("option", { value: o, selected: o === val }, o)));
+const empt = (icon, title, text, ...c) => h("div", { class: "fe-emptycard" }, h("span", { class: "fe-iconbox" }, ic(icon)), h("b", {}, title), h("span", { class: "fe-meta" }, text), ...c);
+const tagRow = (t, onDel) => h("div", { class: "fe-row" }, ic("tag"), h("div", { class: "fe-main" }, h("b", {}, t.name), h("span", { class: "fe-meta fe-mono" }, t.commit.sha.slice(0, 7))), btn("Supprimer", "trash-2", onDel));
+
+async function vReleases(root) {
+  const repo = cur(), m = await gh(`/repos/${repo}`), rel = await gh(`/repos/${repo}/releases?per_page=30`);
+  const tag = h("input", { class: "fe-input", placeholder: "v1.0.0" }), name = h("input", { class: "fe-input", placeholder: "Titre (optionnel)" }), notes = h("textarea", { class: "fe-input fe-ta", placeholder: "Notes de version (Markdown). Vide = générées automatiquement." });
+  root.append(panel("Publier une release", h("span", { class: "fe-meta" }, `Crée un tag sur ${m.default_branch} et publie la release GitHub.`), h("div", { class: "fe-bar", style: "margin:0" }, tag, name), notes,
+    btn("Publier la release", "tag", () => act(async () => { if (!tag.value.trim()) throw new Error("Indique un nom de tag."); await gh(`/repos/${repo}/releases`, { method: "POST", body: { tag_name: tag.value.trim(), name: name.value || tag.value.trim(), body: notes.value, target_commitish: m.default_branch, generate_release_notes: !notes.value } }); render(S.cur); }, "Release publiée"), "primary")));
+  root.append(h("div", { class: "fe-sec" }, "Releases"), rel.length ? h("div", { class: "fe-list" }, rel.filter((x) => match(x.tag_name, x.name)).map((x) => h("div", { class: "fe-row" }, ic("package"), h("div", { class: "fe-main" }, h("b", {}, x.name || x.tag_name), h("span", { class: "fe-meta" }, `${x.tag_name} · ${ago(x.published_at || x.created_at)}${x.prerelease ? " · pré-version" : ""}`)), link(x.html_url, "Ouvrir"),
+    btn("Supprimer", "trash-2", () => confirm("Supprimer cette release ?") && act(async () => { await gh(`/repos/${repo}/releases/${x.id}`, { method: "DELETE" }); render(S.cur); }, "Release supprimée"))))) : empt("package", "Aucune release", "Publie ta première version pour la retrouver ici."));
+}
+async function vTags(root) {
+  const repo = cur(), m = await gh(`/repos/${repo}`), tags = await gh(`/repos/${repo}/tags?per_page=100`), name = h("input", { class: "fe-input", placeholder: "v1.0.1" });
+  root.append(panel("Nouveau tag", h("span", { class: "fe-meta" }, `Pose un tag sur le dernier commit de ${m.default_branch}.`), h("div", { class: "fe-bar", style: "margin:0" }, name, btn("Créer le tag", "tag", () => act(async () => { const n = name.value.trim(); if (!n) throw new Error("Indique un nom de tag."); const ref = await gh(`/repos/${repo}/git/ref/heads/${m.default_branch}`); await gh(`/repos/${repo}/git/refs`, { method: "POST", body: { ref: "refs/tags/" + n, sha: ref.object.sha } }); render(S.cur); }, "Tag créé"), "primary"))));
+  root.append(h("div", { class: "fe-sec" }, "Tags"), tags.length ? h("div", { class: "fe-list" }, tags.filter((t) => match(t.name)).map((t) => tagRow(t, () => confirm("Supprimer le tag " + t.name + " ?") && act(async () => { await gh(`/repos/${repo}/git/refs/tags/${t.name}`, { method: "DELETE" }); render(S.cur); }, "Tag supprimé")))) : empt("tag", "Aucun tag", "Crée un tag pour marquer une version."));
+}
+async function cmpView(root, log) {
+  const repo = cur(), m = await gh(`/repos/${repo}`), all = await refs(repo), t0 = (await gh(`/repos/${repo}/tags?per_page=1`).catch(() => []))[0]?.name;
+  const base = sel(all, t0 || m.default_branch), head = sel(all, m.default_branch), out = h("div");
+  const run = () => act(async () => {
+    const c = await gh(`/repos/${repo}/compare/${encodeURIComponent(base.value)}...${encodeURIComponent(head.value)}`);
+    if (log) {
+      const md = c.commits.slice().reverse().map((x) => `- ${x.commit.message.split("\n")[0]} (${x.sha.slice(0, 7)})`).join("\n");
+      out.replaceChildren(...(c.commits.length ? [h("div", { class: "fe-bar" }, h("span", { class: "fe-meta" }, `${c.ahead_by} commit(s) depuis ${base.value}`), btn("Copier en Markdown", "copy", () => navigator.clipboard.writeText(md).then(() => toast("Changelog copié")))), h("pre", { class: "fe-log" }, md)] : [empt("scroll-text", "Aucun changement", "Les deux versions sont identiques.")]));
+    } else out.replaceChildren(h("div", { class: "fe-stats" }, stat("Commits d'avance", c.ahead_by), stat("En retard", c.behind_by), stat("Fichiers modifiés", c.files.length)),
+      c.files.length ? h("div", { class: "fe-list" }, c.files.map((f) => h("div", { class: "fe-row" }, ic("file-text"), h("div", { class: "fe-main" }, h("b", {}, f.filename), h("span", { class: "fe-meta" }, f.status)), h("span", { class: "fe-meta fe-mono" }, `+${f.additions} −${f.deletions}`)))) : empt("git-compare", "Aucune différence", "Ces deux références contiennent les mêmes fichiers."));
+    icons();
+  });
+  root.append(h("div", { class: "fe-bar" }, h("span", { class: "fe-meta" }, log ? "Depuis" : "Base"), base, h("span", { class: "fe-meta" }, log ? "jusqu'à" : "Comparer à"), head, btn(log ? "Générer" : "Comparer", "git-compare", run, "primary")), out);
+  run();
+}
+async function vSupport(root) {
+  const repo = cur(), issues = (await gh(`/repos/${repo}/issues?state=all&per_page=50`)).filter((i) => !i.pull_request), list = h("div");
+  const st = h("select", { class: "fe-select", onchange: () => draw() }, ["Tous", "Ouverts", "Fermés"].map((x) => h("option", {}, "Statut : " + x)));
+  const t = h("input", { class: "fe-input", placeholder: "Résumé du problème" }), b = h("textarea", { class: "fe-input fe-ta", placeholder: "Décris ce qui se passe (étapes, URL, logs…)" });
+  const form = h("div", { class: "fe-card", hidden: true }, h("b", {}, "Nouveau ticket"), t, b, btn("Envoyer", "send", () => act(async () => { if (!t.value.trim()) throw new Error("Ajoute un titre."); await gh(`/repos/${repo}/issues`, { method: "POST", body: { title: t.value.trim(), body: b.value } }); render(S.cur); }, "Ticket créé"), "primary"));
+  const draw = () => {
+    const f = st.value.slice(9), rows = issues.filter((i) => (f === "Tous" || (f === "Ouverts") === (i.state === "open")) && match(i.title));
+    list.replaceChildren(rows.length ? h("div", { class: "fe-list" }, rows.map((i) => h("div", { class: "fe-row" }, h("span", { class: "fe-dot " + (i.state === "open" ? "ok" : "") }), h("div", { class: "fe-main" }, h("b", {}, `#${i.number} ${i.title}`), h("span", { class: "fe-meta" }, `${i.state === "open" ? "ouvert" : "fermé"} · ${i.comments} réponse(s) · ${ago(i.updated_at)}`)), link(i.html_url, "Ouvrir")))) : empt("message-circle", "Aucun ticket", "Crée un ticket pour obtenir de l'aide.", btn("Nouveau ticket", "plus", () => { form.hidden = false; t.focus(); }, "primary")));
+    icons();
+  };
+  root.append(h("div", { class: "fe-bar" }, st, h("span", { style: "flex:1" }), btn("Nouveau ticket", "plus", () => { form.hidden = !form.hidden; }, "primary")), form, list);
+  draw();
+}
+async function vLogs2(root) {
+  const repo = cur();
+  const [runs, commits, prs] = await Promise.all([gh(`/repos/${repo}/actions/runs?per_page=50`), gh(`/repos/${repo}/commits?per_page=30`).catch(() => []), gh(`/repos/${repo}/pulls?state=all&per_page=20&sort=updated`)]);
+  const ev = [...runs.workflow_runs.map((r) => ({ t: r.updated_at, k: "DEPLOY", lvl: r.conclusion === "failure" ? "error" : r.status !== "completed" ? "warn" : "ok", m: `${r.name} · ${r.head_branch} · ${r.head_sha.slice(0, 7)} · ${r.status === "completed" ? r.conclusion + " (" + dur(r.run_started_at, r.updated_at) + ")" : "en cours"}` })),
+    ...commits.map((c) => ({ t: c.commit.author.date, k: "COMMIT", lvl: "info", m: `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]} — ${c.commit.author.name}` })),
+    ...prs.map((p) => ({ t: p.merged_at || p.closed_at || p.created_at, k: "PR", lvl: "info", m: `#${p.number} ${p.merged_at ? "fusionnée" : p.state === "open" ? "ouverte" : "fermée"} · ${p.title}` }))].sort((a, b) => new Date(b.t) - new Date(a.t));
+  const K = { DEPLOY: "Déploiements", COMMIT: "Commits", PR: "PR" }, lv = (e) => (e.lvl === "error" ? "Erreur" : e.lvl === "warn" ? "Avertissement" : "Info"), on = {}, con = h("div", { class: "fe-console" });
+  let shown = [];
+  const draw = () => { shown = ev.filter((e) => on[K[e.k]] !== false && on[lv(e)] !== false && match(e.m));
+    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", {}, e.k), h("span", {}, e.m)))); if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement.")); };
+  const box = (n, c) => h("label", { class: "fe-check" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { on[n] = e.target.checked; draw(); } }), n, h("span", { class: "fe-meta" }, String(c)));
+  const side = h("div", { class: "fe-filters" }, h("b", {}, "Filtres"), h("div", { class: "fe-sec" }, "Source"), ...Object.entries(K).map(([k, n]) => box(n, ev.filter((e) => e.k === k).length)), h("div", { class: "fe-sec" }, "Niveau"), ...["Info", "Avertissement", "Erreur"].map((n) => box(n, ev.filter((e) => lv(e) === n).length)));
+  const bar = h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Live", "play-circle", () => { S.live = !S.live; render(S.cur); }, S.live ? "primary" : ""), btn("Actualiser", "refresh-cw", () => render(S.cur)),
+    btn("Télécharger", "download", () => { const a = h("a", { href: URL.createObjectURL(new Blob([shown.map((e) => `${e.t} ${e.k} ${e.m}`).join("\n")], { type: "text/plain" })), download: "logs.txt" }); a.click(); }));
+  root.append(h("div", { class: "fe-logs" }, side, h("div", {}, bar, con)));
+  draw();
+  if (S.live) S.timer = setTimeout(() => render(S.cur), 8000);
+}
+function area(labels, data) {
+  const W = 1100, H = 260, pl = 34, pb = 22, pt = 10, n = data.length, max = Math.max(1, ...data), x = (i) => pl + ((W - pl - 8) * i) / Math.max(1, n - 1), y = (v) => pt + (H - pt - pb) * (1 - v / max);
+  let g = ""; for (let k = 0; k <= 3; k++) { const yy = pt + ((H - pt - pb) * k) / 3; g += `<line x1="${pl}" x2="${W - 8}" y1="${yy}" y2="${yy}" stroke="#e6e9ed"/><text x="${pl - 6}" y="${yy + 3}" text-anchor="end" font-size="10" fill="#7a7a7a">${Math.round(max * (1 - k / 3))}</text>`; }
+  const pts = data.map((v, i) => `${x(i)},${y(v)}`).join(" L");
+  g += `<path class="fe-fill" d="M${x(0)},${H - pb} L${pts} L${x(n - 1)},${H - pb}Z" fill="#111" opacity=".07"/><polyline class="fe-stroke" fill="none" stroke="#111" stroke-width="1.6" points="${pts.replace(/ L/g, " ")}"/>`;
+  labels.forEach((l, i) => { if (i % 2 === 0) g += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#7a7a7a">${l}</text>`; });
+  const el = h("div", { class: "fe-area" }); el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">${g}</svg>`; return el;
+}
+async function vAnalytics2(root) {
+  const repo = cur();
+  try {
+    const [v, c, ref, pth] = await Promise.all([gh(`/repos/${repo}/traffic/views`), gh(`/repos/${repo}/traffic/clones`), gh(`/repos/${repo}/traffic/popular/referrers`), gh(`/repos/${repo}/traffic/popular/paths`)]);
+    const ds = days(14), by = (a, k) => ds.map((d) => a.find((x) => x.timestamp.slice(0, 10) === d)?.[k] || 0);
+    const M = [["Vues", v.count, by(v.views, "count")], ["Visiteurs uniques", v.uniques, by(v.views, "uniques")], ["Clones", c.count, by(c.clones, "count")]], tabs = h("div", { class: "fe-mtabs" }), box = h("div");
+    const pick = (i) => { [...tabs.children].forEach((t, j) => t.classList.toggle("on", i === j)); box.replaceChildren(area(ds.map(dl), M[i][2])); };
+    M.forEach(([k, n], i) => tabs.append(h("button", { type: "button", class: "fe-mtab", onclick: () => pick(i) }, h("span", {}, k), h("b", {}, String(n)))));
+    root.append(h("div", { class: "fe-hero2" }, h("div", {}, h("b", { class: "fe-herotitle" }, "Trafic du dépôt"), h("div", { class: "fe-meta" }, "Vues, visiteurs et clones sur les 14 derniers jours.")), link(`https://github.com/${repo}/graphs/traffic`, "Détails sur GitHub")),
+      h("div", { class: "fe-card fe-flush" }, tabs, box), h("div", { class: "fe-grid" }, panel("Sources", ...ref.map((x) => h("div", { class: "fe-kv" }, h("span", {}, x.referrer), h("b", {}, String(x.count)))), !ref.length && h("span", { class: "fe-meta" }, "Aucune donnée")),
+        panel("Pages populaires", ...pth.map((x) => h("div", { class: "fe-kv" }, h("span", {}, x.path), h("b", {}, String(x.count)))), !pth.length && h("span", { class: "fe-meta" }, "Aucune donnée"))));
+    pick(0);
+  } catch (e) { root.append(panel("Trafic indisponible", h("span", { class: "fe-meta" }, e.message + " (les stats de trafic demandent les droits d'écriture sur le dépôt)."))); }
+}
+Object.assign(VIEWS, { "Releases": vReleases, "Tags": vTags, "Changelog": (r) => cmpView(r, true), "Comparer": (r) => cmpView(r, false), "Support": vSupport, "Logs": vLogs2, "Analytics": vAnalytics2 });
 Object.assign(window.DP, { setProject, projBar, syncSwitcher });
 syncSwitcher();
 // Ouvre les deux premiers groupes (Projet, Déploiements) après l'animation d'arrivée.
