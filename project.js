@@ -119,7 +119,7 @@ function commitCard(repo, m, path) {
         const c = await gh(`/repos/${repo}/git/commits`, { method: "POST", body: { message: msg.value || "Update via Deploy", tree: t.sha, parents: [ref.object.sha] } });
         L.step("Push sur GitHub");
         await gh(`/repos/${repo}/git/refs/heads/${m.default_branch}`, { method: "PATCH", body: { sha: c.sha } });
-        L.close(); go("Historique");
+        L.close(); go("Déploiements");
       } catch (e) { L.close(); throw e; }
     }, "Commit poussé : déploiement en cours"), "primary")));
 }
@@ -136,7 +136,7 @@ async function vFiles(root) {
     const msg = h("input", { class: "fe-input", value: "Update " + data.name, style: "flex:1" });
     return root.append(crumbs, ta, h("div", { class: "fe-bar" }, msg, btn("Commit et déployer", "git-commit-horizontal", () => act(async () => {
       await gh(`/repos/${repo}/contents/${path}`, { method: "PUT", body: { message: msg.value, content: btoa(unescape(encodeURIComponent(ta.value))), sha: data.sha, branch: m.default_branch } });
-      go("Historique");
+      go("Déploiements");
     }, "Commit créé : déploiement en cours"), "primary")));
   }
   const items = [...data].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || a.name.localeCompare(b.name)).filter((x) => match(x.name));
@@ -172,7 +172,7 @@ async function projBar(box, label) {
   const repo = cur(), m = await getMeta(repo);
   document.getElementById("content-title").textContent = `/ ${m.name} / ${label}`;
   box.append(h("div", { class: "fe-head" }, h("div", { class: "fe-main" }, h("b", { class: "fe-title" }, m.name), h("span", { class: "fe-meta" }, `${m.owner.login} · ${m.private ? "privé" : "public"} · ${m.default_branch}`)),
-    btn("Déployer", "rocket", () => act(async () => { await deploy(repo, m.default_branch); go("Historique"); }), "primary"),
+    btn("Déployer", "rocket", () => act(async () => { await deploy(repo, m.default_branch); go("Déploiements"); }), "primary"),
     btn("Déploiement auto", "git-branch", () => confirm("Installer le workflow (déploiement à chaque push + previews par PR) ?") && act(async () => { const L = loading("Configuration de " + m.name); try { await setupAuto(repo, L); } finally { L.close(); } delete cache[repo]; go(label); }, "Déploiement auto et previews activés")),
     m._url && link(m._url, "Visiter"), link(m.html_url, "GitHub")));
 }
@@ -200,7 +200,12 @@ sw.addEventListener("click", async (e) => {
 document.addEventListener("click", (e) => { if (pop && !pop.contains(e.target)) closePop(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
 
-Object.assign(VIEWS, { "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
+async function vGeneral(root) {
+  const m = await gh(`/repos/${cur()}`), row = (k, v) => h("div", { class: "fe-row" }, h("div", { class: "fe-main" }, h("span", { class: "fe-meta" }, k), h("b", {}, String(v))));
+  root.append(panel("Général", h("div", { class: "fe-list" }, row("Nom du projet", m.name), row("ID du projet", m.id), row("Propriétaire", m.owner.login), row("Branche de production", m.default_branch), row("Visibilité", m.private ? "Privé" : "Public")),
+    h("div", { class: "fe-bar", style: "margin:0" }, btn("Copier l'ID", "copy", () => navigator.clipboard.writeText(String(m.id)).then(() => toast("ID copié"))), link(m.html_url, "GitHub"))));
+}
+Object.assign(VIEWS, { "Général": vGeneral, "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
 Object.assign(window.DP, { setProject, projBar, syncSwitcher });
 syncSwitcher();
 // Ouvre les deux premiers groupes (Projet, Déploiements) après l'animation d'arrivée.

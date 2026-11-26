@@ -38,7 +38,7 @@ const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b) - new Date
 
 async function gh(path, opt = {}) {
   const t = LS("fe_token");
-  if (!t) throw new Error("Non connecté : Paramètres › Connexion GitHub.");
+  if (!t) throw new Error("Non connecté : Paramètres › Git.");
   const r = await fetch(path.startsWith("http") ? path : "https://api.github.com" + path, {
     method: opt.method || "GET",
     headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: "Bearer " + t, ...(opt.body ? { "Content-Type": "application/json" } : {}) },
@@ -162,7 +162,7 @@ function newProjectForm() {
         await setupAuto(repo.full_name, L);
         L.step("Site en ligne");
         S.repos = null;
-        await new Promise((r) => setTimeout(r, 700)); L.close(); window.DP.setProject(repo.full_name, "Historique");
+        await new Promise((r) => setTimeout(r, 700)); L.close(); window.DP.setProject(repo.full_name, "Déploiements");
       } catch (e) { L.close(); throw e; }
     }), "primary")));
 }
@@ -269,16 +269,16 @@ async function vAnalytics(root) {
     h("div", { class: "fe-bars" }, v.views.map((x) => h("div", { title: `${x.timestamp.slice(0, 10)} : ${x.count}`, style: `height:${(x.count / max) * 100}%` })))));
 }
 
-const PROJ = ["Aperçu", "Historique", "Previews", "Logs", "Fichiers", "Domaines", "Variables", "Analytics"];
+const PROJ = ["Aperçu", "Déploiements", "Logs", "Fichiers", "Domaines", "Variables d'environnement", "Analytics", "Général", "Environnements"];
 const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t));
 const VIEWS = {
   "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
-  "Historique": (r) => vRuns(r), "Tous les runs": (r) => vRuns(r), "Réussis": (r) => vRuns(r, (x) => x.conclusion === "success"),
+  "Déploiements": (r) => vRuns(r), "Tous les runs": (r) => vRuns(r), "Réussis": (r) => vRuns(r, (x) => x.conclusion === "success"),
   "En cours": (r) => vRuns(r, (x) => x.status !== "completed"), "Échecs": (r) => vRuns(r, (x) => x.conclusion === "failure"),
   "Annulés": (r) => vRuns(r, (x) => x.conclusion === "cancelled"),
-  "Domaines": vDomains, "Environnements": vEnvs, "Variables": vVars, "Analytics": vAnalytics, "Connexion GitHub": vConnect,
+  "Domaines": vDomains, "Environnements": vEnvs, "Variables d'environnement": vVars, "Analytics": vAnalytics, "Git": vConnect,
   "Sécurité": info("Ton token n'est stocké que dans le localStorage de ce navigateur et n'est envoyé qu'à api.github.com. Utilise un token à durée limitée et révoque-le sur GitHub si besoin."),
-  "Aide": info("1) Paramètres › Connexion GitHub : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : logs, relance, rollback."),
+  "Support": info("1) Paramètres › Git : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : logs, relance, rollback."),
 };
 
 async function render(target) {
@@ -291,8 +291,8 @@ async function render(target) {
   const box = h("div");
   root.append(box);
   try {
-    if (label !== "Connexion GitHub" && !LS("fe_token") && !["Sécurité", "Aide"].includes(label))
-      box.append(h("div", { class: "fe-card" }, "Connecte ton compte GitHub pour commencer.", btn("Connexion GitHub", "key-round", () => go("Connexion GitHub"), "primary")));
+    if (label !== "Git" && !LS("fe_token") && !["Sécurité", "Support"].includes(label))
+      box.append(h("div", { class: "fe-card" }, "Connecte ton compte GitHub pour commencer.", btn("Connecter GitHub", "key-round", () => go("Git"), "primary")));
     else if (PROJ.includes(label) && !cur()) box.append(h("div", { class: "fe-card" }, "Aucun projet sélectionné.", btn("Choisir un projet", "folder-git-2", () => document.getElementById("project-switcher").click(), "primary")));
     else { if (PROJ.includes(label) && window.DP.projBar) await window.DP.projBar(box, label); await fn(box); }
   } catch (e) { box.append(h("div", { class: "fe-card" }, "Erreur : " + e.message)); }
