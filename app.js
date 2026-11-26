@@ -196,7 +196,7 @@ function runRow(repo, r, firstOk, reload) {
   const prev = r.event === "pull_request", name = repo.split("/")[1];
   const row = h("div", { class: "fe-row fe-dep" }, h("div", { class: "fe-pname" }, h("span", { class: "fe-avatar sm" }, name[0].toUpperCase()), name), h("b", { class: "fe-ell" }, r.display_title),
     h("span", { class: "fe-scell" }, h("span", { class: "fe-dot " + dotOf(r) }), r.status === "completed" ? `${r.conclusion === "success" ? "Prêt" : r.conclusion} ${dur(r.run_started_at, r.updated_at)}` : "En cours"),
-    h("span", { class: "fe-pill" }, ic(prev ? "eye" : "arrow-up-circle"), prev ? "Preview" : "Production"), h("span", { class: "fe-mono" }, r.head_sha.slice(0, 7)),
+    h("span", { class: "fe-pill " + (prev ? "prev" : "prod") }, ic(prev ? "eye" : "arrow-up-circle"), prev ? "Preview" : "Production"), h("span", { class: "fe-mono" }, r.head_sha.slice(0, 7)),
     h("span", { class: "fe-meta fe-pfoot" }, ic("git-branch"), r.head_branch), h("span", { class: "fe-meta" }, ago(r.created_at)),
     btn("Logs", "terminal", () => act(async () => {
       if (!steps.hidden) return (steps.hidden = true);
