@@ -13,8 +13,8 @@ function chart({ type = "bar", labels, series, height = 170 }) {
   const tot = labels.map((_, i) => (type === "bar" ? series.reduce((a, s) => a + s.data[i], 0) : Math.max(...series.map((s) => s.data[i]))));
   const max = Math.max(1, ...tot);
   let g = "";
-  for (let k = 0; k <= 3; k++) { const y = pt + ih - (ih * k) / 3; g += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="#e6e9ed"/><text x="${pl - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#7a7a7a">${Math.round((max * k) / 3)}</text>`; }
-  if (type === "bar") labels.forEach((l, i) => { let acc = 0; series.forEach((s) => { const v = s.data[i]; if (!v) return; const hh = (ih * v) / max; acc += hh; g += `<rect x="${pl + i * bw + bw * 0.15}" y="${pt + ih - acc}" width="${bw * 0.7}" height="${hh}" rx="2" fill="${s.color}"><title>${l} · ${s.name} : ${v}</title></rect>`; }); });
+  for (let k = 0; k <= 3; k++) { const y = pt + ih - (ih * k) / 3; g += `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" stroke="#e6e9ed" stroke-dasharray="3 4"/><text x="${pl - 6}" y="${y + 3}" text-anchor="end" font-size="9" fill="#7a7a7a">${Math.round((max * k) / 3)}</text>`; }
+  if (type === "bar") labels.forEach((l, i) => { let acc = 0; series.forEach((s) => { const v = s.data[i]; if (!v) return; const hh = (ih * v) / max; acc += hh; g += `<rect x="${pl + i * bw + bw * 0.15}" y="${pt + ih - acc}" width="${bw * 0.7}" height="${hh}" rx="4" fill="${s.color}"><title>${l} · ${s.name} : ${v}</title></rect>`; }); });
   else series.forEach((s) => { g += `<polyline fill="none" stroke="${s.color}" stroke-width="1.6" points="${s.data.map((v, i) => `${pl + bw * i + bw / 2},${pt + ih - (ih * v) / max}`).join(" ")}"/>` + s.data.map((v, i) => `<circle cx="${pl + bw * i + bw / 2}" cy="${pt + ih - (ih * v) / max}" r="2.3" fill="${s.color}"><title>${labels[i]} · ${s.name} : ${v}</title></circle>`).join(""); });
   labels.forEach((l, i) => { if (i % Math.ceil(n / 7) === 0) g += `<text x="${pl + bw * i + bw / 2}" y="${H - 5}" text-anchor="middle" font-size="9" fill="#7a7a7a">${l}</text>`; });
   const el = h("div", { class: "fe-chart" });
@@ -45,10 +45,11 @@ async function vOverview(root) {
     panel("Observabilité · 14 j", stat("Déploiements", r14.length), stat("Échecs", f14), stat("Taux d'erreur", r14.length ? Math.round((f14 / r14.length) * 100) + " %" : "0 %")),
     panel("Analytics", h("span", { class: "fe-meta" }, "Trafic, pages populaires et clones de ton dépôt."), btn("Voir Analytics", "bar-chart-3", () => go("Analytics")))));
   root.append(h("div", { class: "fe-sec" }, "Branches actives"), h("div", { class: "fe-list" }, brs.map((b) => h("div", { class: "fe-row" }, ic("git-branch"), h("div", { class: "fe-main" }, h("b", {}, b.name), h("span", { class: "fe-meta" }, b.protected ? "protégée" : "branche")), link(`https://github.com/${repo}/tree/${b.name}`, "Ouvrir")))));
-  root.append(panel("Déploiements par jour (14 j)", chart({ labels: ds.map(dl), series: [{ name: "Réussis", color: "#2e9e5b", data: perDay(runs, "created_at", ds, (r) => r.conclusion === "success") }, { name: "Échecs", color: "#d64545", data: perDay(runs, "created_at", ds, (r) => r.conclusion === "failure") }] })));
-  const ls = ok.slice(0, 20).reverse();
-  if (ls.length) root.append(panel("Durée des builds (secondes)", chart({ type: "line", labels: ls.map((r) => r.head_sha.slice(0, 5)), series: [{ name: "Durée", color: "#111", data: ls.map(secs) }] })));
-  root.append(panel("Commits par jour (14 j)", chart({ labels: ds.map(dl), series: [{ name: "Commits", color: "#111", data: perDay(commits.map((c) => ({ t: c.commit.author.date })), "t", ds) }] })));
+  const ls = ok.slice(0, 20).reverse(), ok14 = perDay(runs, "created_at", ds, (r) => r.conclusion === "success"), ko14 = perDay(runs, "created_at", ds, (r) => r.conclusion === "failure");
+  root.append(h("div", { class: "fe-sec" }, "Activité"), h("div", { class: "fe-grid" },
+    panel("Déploiements par jour", chart({ labels: ds.map(dl), series: [{ name: "Réussis", color: "#2e9e5b", data: ok14 }, { name: "Échecs", color: "#d64545", data: ko14 }] })),
+    panel("Commits par jour", area(ds.map(dl), perDay(commits.map((c) => ({ t: c.commit.author.date })), "t", ds))),
+    ls.length > 0 && panel("Durée des builds (s)", area(ls.map((r) => r.head_sha.slice(0, 5)), ls.map(secs)))));
 }
 
 /* ---- Previews par PR ---- */
@@ -93,7 +94,7 @@ async function vLogs(root) {
   let shown = [];
   function draw() {
     shown = ev.filter((e) => ({ Tout: 1, Erreurs: e.lvl === "error", Déploiements: e.k === "DEPLOY", Commits: e.k === "COMMIT", PR: e.k === "PR" })[f.value] && match(e.m));
-    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", {}, e.k), h("span", {}, e.m))));
+    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", { class: "k-" + e.k }, e.k), h("span", {}, e.m))));
     if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement."));
   }
   root.append(h("div", { class: "fe-bar" }, f, btn("Copier", "copy", () => navigator.clipboard.writeText(shown.map((e) => `${e.t} ${e.k} ${e.m}`).join("\n")).then(() => toast("Logs copiés"))), btn("Actualiser", "refresh-cw", () => render(S.cur))), con);
@@ -132,7 +133,7 @@ async function vFiles(root) {
   const repo = cur(); if (!repo) return empty(root);
   const m = await gh(`/repos/${repo}`), path = S.path || "", up = () => { S.path = path.split("/").slice(0, -1).join("/"); render(S.cur); };
   const data = await gh(`/repos/${repo}/contents/${path}?ref=${m.default_branch}`);
-  const crumbs = h("div", { class: "fe-bar" }, btn("Racine", "home", () => { S.path = ""; render(S.cur); }), path && btn("Dossier parent", "corner-left-up", up), h("span", { class: "fe-meta" }, "/" + path));
+  const crumbs = h("div", { class: "fe-crumbs" }, btn(m.name, "folder-git-2", () => { S.path = ""; render(S.cur); }), ...path.split("/").filter(Boolean).flatMap((seg, i, a) => [h("span", { class: "fe-meta" }, "/"), h("button", { type: "button", class: "fe-crumb", onclick: () => { S.path = a.slice(0, i + 1).join("/"); render(S.cur); } }, seg)]));
   if (!Array.isArray(data)) {
     if (data.size > 200000 || /\.(png|jpe?g|gif|webp|ico|woff2?|pdf|zip)$/i.test(data.name)) return root.append(crumbs, panel(data.name, h("span", { class: "fe-meta" }, "Fichier binaire ou trop gros pour l'éditeur."), link(data.html_url, "Voir sur GitHub")));
     const ta = h("textarea", { class: "fe-editor", spellcheck: "false" }); ta.value = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ""))));
@@ -144,7 +145,7 @@ async function vFiles(root) {
   }
   const items = [...data].sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || a.name.localeCompare(b.name)).filter((x) => match(x.name));
   root.append(crumbs, h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Nouveau fichier", "file-plus", () => { const n = prompt("Nom du fichier (ex. about.html)"); if (n) act(async () => { await gh(`/repos/${repo}/contents/${path ? path + "/" : ""}${n}`, { method: "PUT", body: { message: "Add " + n, content: btoa("\n"), branch: m.default_branch } }); render(S.cur); }, "Fichier créé"); })),
-    h("div", { class: "fe-list" }, items.map((x) => h("div", { class: "fe-row fe-click", onclick: () => { S.path = x.path; render(S.cur); } }, ic(x.type === "dir" ? "folder" : "file-text"), h("div", { class: "fe-main" }, h("b", {}, x.name)), h("span", { class: "fe-meta" }, x.type === "dir" ? "" : x.size + " o")))), commitCard(repo, m, path));
+    h("div", { class: "fe-list" }, items.map((x) => h("div", { class: "fe-row fe-click", onclick: () => { S.path = x.path; render(S.cur); } }, ic(x.type === "dir" ? "folder" : /\.(html?|jsx?|tsx?|css|json|ya?ml)$/i.test(x.name) ? "file-code" : /\.(png|jpe?g|gif|webp|svg|ico)$/i.test(x.name) ? "image" : "file-text"), h("div", { class: "fe-main" }, h("b", {}, x.name)), h("span", { class: "fe-meta" }, x.type === "dir" ? "" : x.size > 1024 ? (x.size / 1024).toFixed(1) + " Ko" : x.size + " o")))), commitCard(repo, m, path));
 }
 
 /* ---- Analytics ---- */
@@ -254,12 +255,12 @@ async function cmpView(root, log) {
 }
 async function vSupport(root) {
   const repo = cur(), issues = (await gh(`/repos/${repo}/issues?state=all&per_page=50`)).filter((i) => !i.pull_request), list = h("div");
-  const st = h("select", { class: "fe-select", onchange: () => draw() }, ["Tous", "Ouverts", "Fermés"].map((x) => h("option", {}, "Statut : " + x)));
+  const st = h("select", { class: "fe-select chip", onchange: () => draw() }, ["Tous", "Ouverts", "Fermés"].map((x) => h("option", {}, "Statut : " + x)));
   const t = h("input", { class: "fe-input", placeholder: "Résumé du problème" }), b = h("textarea", { class: "fe-input fe-ta", placeholder: "Décris ce qui se passe (étapes, URL, logs…)" });
   const form = h("div", { class: "fe-card", hidden: true }, h("b", {}, "Nouveau ticket"), t, b, btn("Envoyer", "send", () => act(async () => { if (!t.value.trim()) throw new Error("Ajoute un titre."); await gh(`/repos/${repo}/issues`, { method: "POST", body: { title: t.value.trim(), body: b.value } }); render(S.cur); }, "Ticket créé"), "primary"));
   const draw = () => {
     const f = st.value.slice(9), rows = issues.filter((i) => (f === "Tous" || (f === "Ouverts") === (i.state === "open")) && match(i.title));
-    list.replaceChildren(rows.length ? h("div", { class: "fe-list" }, rows.map((i) => h("div", { class: "fe-row" }, h("span", { class: "fe-dot " + (i.state === "open" ? "ok" : "") }), h("div", { class: "fe-main" }, h("b", {}, `#${i.number} ${i.title}`), h("span", { class: "fe-meta" }, `${i.state === "open" ? "ouvert" : "fermé"} · ${i.comments} réponse(s) · ${ago(i.updated_at)}`)), link(i.html_url, "Ouvrir")))) : empt("message-circle", "Aucun ticket", "Crée un ticket pour obtenir de l'aide.", btn("Nouveau ticket", "plus", () => { form.hidden = false; t.focus(); }, "primary")));
+    list.replaceChildren(rows.length ? h("div", { class: "fe-list" }, rows.map((i) => h("div", { class: "fe-row" }, h("span", { class: "fe-state " + i.state }, ic(i.state === "open" ? "circle-dot" : "circle-check")), h("div", { class: "fe-main" }, h("b", {}, `#${i.number} ${i.title}`), h("span", { class: "fe-meta" }, `${i.user.login} · ${i.state === "open" ? "ouvert" : "fermé"} ${ago(i.updated_at)}`)), h("span", { class: "fe-pill" }, ic("message-circle"), String(i.comments)), link(i.html_url, "Ouvrir")))) : empt("message-circle", "Aucun ticket", "Crée un ticket pour obtenir de l'aide.", btn("Nouveau ticket", "plus", () => { form.hidden = false; t.focus(); }, "primary")));
     icons();
   };
   root.append(h("div", { class: "fe-bar" }, st, h("span", { style: "flex:1" }), btn("Nouveau ticket", "plus", () => { form.hidden = !form.hidden; }, "primary")), form, list);
@@ -274,7 +275,7 @@ async function vLogs2(root) {
   const K = { DEPLOY: "Déploiements", COMMIT: "Commits", PR: "PR" }, lv = (e) => (e.lvl === "error" ? "Erreur" : e.lvl === "warn" ? "Avertissement" : "Info"), on = {}, con = h("div", { class: "fe-console" });
   let shown = [];
   const draw = () => { shown = ev.filter((e) => on[K[e.k]] !== false && on[lv(e)] !== false && match(e.m));
-    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", {}, e.k), h("span", {}, e.m)))); if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement.")); };
+    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", { class: "k-" + e.k }, e.k), h("span", {}, e.m)))); if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement.")); };
   const box = (n, c) => h("label", { class: "fe-check" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { on[n] = e.target.checked; draw(); } }), n, h("span", { class: "fe-meta" }, String(c)));
   const side = h("div", { class: "fe-filters" }, h("b", {}, "Filtres"), h("div", { class: "fe-sec" }, "Source"), ...Object.entries(K).map(([k, n]) => box(n, ev.filter((e) => e.k === k).length)), h("div", { class: "fe-sec" }, "Niveau"), ...["Info", "Avertissement", "Erreur"].map((n) => box(n, ev.filter((e) => lv(e) === n).length)));
   const bar = h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Live", "play-circle", () => { S.live = !S.live; render(S.cur); }, S.live ? "primary" : ""), btn("Actualiser", "refresh-cw", () => render(S.cur)),

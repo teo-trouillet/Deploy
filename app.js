@@ -169,7 +169,7 @@ function newProjectForm() {
 
 async function vRuns(root, filter) {
   const box = h("div", { class: "fe-list" }), stats = h("div", { class: "fe-stats" }), FS = { Tous: () => 1, Réussis: (r) => r.conclusion === "success", "En cours": (r) => r.status !== "completed", Échecs: (r) => r.conclusion === "failure", Annulés: (r) => r.conclusion === "cancelled" };
-  const fsel = h("select", { class: "fe-select", onchange: () => load() }, Object.keys(FS).map((k) => h("option", {}, "Statut : " + k)));
+  const fsel = h("select", { class: "fe-select chip", onchange: () => load() }, Object.keys(FS).map((k) => h("option", {}, "Statut : " + k)));
   root.append(h("div", { class: "fe-bar" }, fsel,
     btn("Déployer maintenant", "rocket", () => act(() => deploy(cur()), null), "primary")), stats, box);
   if (!cur()) return box.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
