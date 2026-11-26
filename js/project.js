@@ -264,11 +264,11 @@ async function vLogs(root) {
   const repoUrl = "https://github.com/" + repo;
   const safe = async (path, fallback = []) => { try { return await gh(path); } catch { return fallback; } };
   const [runData, commits, prs, repoEvents, deployments] = await Promise.all([
-    safe(\`/repos/\${repo}/actions/runs?per_page=100\`, { workflow_runs: [] }),
-    safe(\`/repos/\${repo}/commits?per_page=100\`),
-    safe(\`/repos/\${repo}/pulls?state=all&per_page=100&sort=updated&direction=desc\`),
-    safe(\`/repos/\${repo}/events?per_page=100\`),
-    safe(\`/repos/\${repo}/deployments?per_page=50\`)
+    safe(`/repos/${repo}/actions/runs?per_page=100`, { workflow_runs: [] }),
+    safe(`/repos/${repo}/commits?per_page=100`),
+    safe(`/repos/${repo}/pulls?state=all&per_page=100&sort=updated&direction=desc`),
+    safe(`/repos/${repo}/events?per_page=100`),
+    safe(`/repos/${repo}/deployments?per_page=50`)
   ]);
 
   const events = [];
@@ -291,7 +291,7 @@ async function vLogs(root) {
     add({
       id: "run-" + r.id, t: end, k: "RUN", lvl, status: r.status === "completed" ? (r.conclusion || "completed") : r.status,
       branch: r.head_branch || "", sha: r.head_sha || "", actor: r.actor?.login || r.triggering_actor?.login || "Inconnu",
-      m: \`\${r.name || r.display_title || "Workflow"} · \${r.display_title || r.head_branch || "Exécution"}\`,
+      m: `${r.name || r.display_title || "Workflow"} · ${r.display_title || r.head_branch || "Exécution"}`,
       details: [
         "Workflow : " + (r.name || "Workflow"),
         "État : " + (r.status === "completed" ? r.conclusion || "terminé" : r.status),
@@ -330,7 +330,7 @@ async function vLogs(root) {
       id: "pr-" + p.number, t: p.merged_at || p.closed_at || p.updated_at || p.created_at,
       k: "PR", lvl: p.merged_at ? "ok" : p.state === "open" ? "info" : "warn", status: state,
       branch: p.head?.ref || "", sha: p.head?.sha || "", actor: p.user?.login || "Inconnu",
-      m: \`#\${p.number} · \${p.title}\`,
+      m: `#${p.number} · ${p.title}`,
       details: [
         "Pull request : #" + p.number,
         "État : " + (p.merged_at ? "fusionnée" : p.state === "open" ? "ouverte" : "fermée"),
@@ -353,28 +353,28 @@ async function vLogs(root) {
     let source = "Activité GitHub", level = "info", details = [];
     if (type === "PushEvent") {
       const commitsInPush = p.commits || [];
-      message = \`Push · \${p.ref?.replace("refs/heads/", "") || "branche inconnue"} · \${commitsInPush.length} commit(s)\`;
+      message = `Push · ${p.ref?.replace("refs/heads/", "") || "branche inconnue"} · ${commitsInPush.length} commit(s)`;
       source = "Git"; details = commitsInPush.slice(0, 10).map((c) => (c.sha || "").slice(0, 7) + " " + (c.message || "").split("\n")[0]);
     } else if (type === "CreateEvent") {
-      message = \`Création \${p.ref_type || "ressource"} · \${p.ref || repo}\`; source = "Git";
+      message = `Création ${p.ref_type || "ressource"} · ${p.ref || repo}`; source = "Git";
     } else if (type === "DeleteEvent") {
-      message = \`Suppression \${p.ref_type || "ressource"} · \${p.ref || "—"}\`; source = "Git"; level = "warn";
+      message = `Suppression ${p.ref_type || "ressource"} · ${p.ref || "—"}`; source = "Git"; level = "warn";
     } else if (type === "PullRequestEvent") {
-      const pr = p.pull_request || {}; message = \`PR #\${pr.number || "?"} · \${p.action || "mise à jour"} · \${pr.title || ""}\`; source = "Pull requests"; level = p.action === "closed" && !pr.merged_at ? "warn" : "info";
+      const pr = p.pull_request || {}; message = `PR #${pr.number || "?"} · ${p.action || "mise à jour"} · ${pr.title || ""}`; source = "Pull requests"; level = p.action === "closed" && !pr.merged_at ? "warn" : "info";
     } else if (type === "IssuesEvent") {
-      message = \`Issue #\${p.issue?.number || "?"} · \${p.action || "mise à jour"} · \${p.issue?.title || ""}\`; source = "Issues";
+      message = `Issue #${p.issue?.number || "?"} · ${p.action || "mise à jour"} · ${p.issue?.title || ""}`; source = "Issues";
     } else if (type === "ReleaseEvent") {
-      message = \`Release · \${p.action || "mise à jour"} · \${p.release?.name || p.release?.tag_name || ""}\`; source = "Versions";
+      message = `Release · ${p.action || "mise à jour"} · ${p.release?.name || p.release?.tag_name || ""}`; source = "Versions";
     } else if (type === "WorkflowRunEvent") {
-      message = \`Workflow · \${p.action || "mise à jour"} · \${p.workflow_run?.name || ""}\`; source = "Actions";
+      message = `Workflow · ${p.action || "mise à jour"} · ${p.workflow_run?.name || ""}`; source = "Actions";
     } else if (type === "WatchEvent") {
       message = p.action === "started" ? "Dépôt ajouté aux favoris" : "Activité Watch";
     } else if (type === "ForkEvent") {
       message = "Dépôt forké";
     } else if (type === "IssueCommentEvent") {
-      message = \`Commentaire sur \${p.issue?.pull_request ? "PR" : "issue"} #\${p.issue?.number || "?"}\`; source = "Issues";
+      message = `Commentaire sur ${p.issue?.pull_request ? "PR" : "issue"} #${p.issue?.number || "?"}`; source = "Issues";
     } else {
-      message = \`\${message} · \${p.action || p.ref || ""}\`;
+      message = `${message} · ${p.action || p.ref || ""}`;
     }
     add({
       id: "event-" + e.id, t: e.created_at, k: "EVENT", lvl: level, status: p.action || type,
@@ -386,14 +386,14 @@ async function vLogs(root) {
 
   // Historique des déploiements GitHub et de leurs statuts.
   for (const d of deployments.slice(0, 25)) {
-    const statuses = await safe(\`/repos/\${repo}/deployments/\${d.id}/statuses?per_page=10\`, []);
+    const statuses = await safe(`/repos/${repo}/deployments/${d.id}/statuses?per_page=10`, []);
     const latest = statuses[0] || {};
     const state = latest.state || "pending";
     const lvl = ["failure", "error"].includes(state) ? "error" : ["pending", "in_progress", "queued"].includes(state) ? "warn" : state === "success" ? "ok" : "info";
     add({
       id: "deployment-" + d.id, t: latest.created_at || d.created_at, k: "DEPLOYMENT", lvl, status: state,
       branch: d.ref || "", sha: d.sha || "", actor: d.creator?.login || "Inconnu",
-      m: \`Déploiement · \${state} · \${d.environment || "environnement par défaut"}\`,
+      m: `Déploiement · ${state} · ${d.environment || "environnement par défaut"}`,
       details: [
         "Déploiement : #" + d.id, "Environnement : " + (d.environment || "—"),
         "Référence : " + (d.ref || "—"), "SHA : " + (d.sha || "—"),
@@ -409,18 +409,18 @@ async function vLogs(root) {
   // les échecs précis des étapes, en plus du résumé du workflow.
   const recentRuns = runList.slice(0, 18);
   const jobResults = await Promise.all(recentRuns.map(async (r) => {
-    try { return { run: r, data: await gh(\`/repos/\${repo}/actions/runs/\${r.id}/jobs?per_page=100\`) }; }
+    try { return { run: r, data: await gh(`/repos/${repo}/actions/runs/${r.id}/jobs?per_page=100`) }; }
     catch { return { run: r, data: { jobs: [] } }; }
   }));
   jobResults.forEach(({ run, data }) => (data.jobs || []).forEach((job) => {
     const state = job.conclusion || job.status || "unknown";
     const lvl = conclusionLevel(job.status, job.conclusion);
-    const stepSummary = (job.steps || []).map((s) => \`\${s.conclusion || s.status || "pending"} · \${s.name}\`).join("\n");
+    const stepSummary = (job.steps || []).map((s) => `${s.conclusion || s.status || "pending"} · ${s.name}`).join("\n");
     add({
       id: "job-" + job.id, t: job.completed_at || job.started_at || run.updated_at,
       k: "JOB", lvl, status: state, branch: run.head_branch || "", sha: run.head_sha || "",
       actor: run.actor?.login || "Inconnu",
-      m: \`Job · \${job.name} · \${state}\`,
+      m: `Job · ${job.name} · ${state}`,
       details: [
         "Workflow : " + (run.name || "Workflow"),
         "Job : " + job.name, "État : " + state,
@@ -439,7 +439,7 @@ async function vLogs(root) {
         k: "STEP", lvl: conclusionLevel(step.status, step.conclusion),
         status: step.conclusion || step.status || "pending", branch: run.head_branch || "",
         sha: run.head_sha || "", actor: run.actor?.login || "Inconnu",
-        m: \`Étape · \${step.name} · \${step.conclusion || step.status || "en attente"}\`,
+        m: `Étape · ${step.name} · ${step.conclusion || step.status || "en attente"}`,
         details: [
           "Workflow : " + (run.name || "Workflow"), "Job : " + job.name,
           "Étape : " + step.name, "État : " + (step.conclusion || step.status || "en attente"),
@@ -512,7 +512,7 @@ async function vLogs(root) {
         ["En cours", String(count.running), "loader-circle"]
       ].map(([label, value, icon]) => h("div", { class: "fe-log-stat" }, h("span", { class: "fe-log-stat-icon" }, ic(icon)), h("div", {}, h("span", { class: "fe-meta" }, label), h("b", {}, value)))
     );
-    countText.textContent = \`\${shown.length} événement(s) affiché(s) sur \${events.length} · \${runList.length} exécution(s) Actions chargée(s)\`;
+    countText.textContent = `${shown.length} événement(s) affiché(s) sur ${events.length} · ${runList.length} exécution(s) Actions chargée(s)`;
     list.replaceChildren();
     if (!shown.length) {
       list.append(empt("search-x", "Aucun événement trouvé", "Modifie les filtres ou élargis la période."));
@@ -555,11 +555,11 @@ async function vLogs(root) {
       [["date", "niveau", "source", "etat", "branche", "auteur", "message", "details", "url"], ...shown.map((e) => [e.t, e.lvl, e.source, e.status, e.branch, e.actor, e.m, e.details, e.url])]
         .map((row) => row.map((v) => '"' + String(v ?? "").replace(/"/g, '""').replace(/\r?\n/g, " ") + '"').join(",")).join("\r\n");
     const blob = new Blob([payload], { type: format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob), a = h("a", { href: url, download: \`deploy-journaux-\${new Date().toISOString().slice(0, 10)}.\${format === "json" ? "json" : "csv"}\` });
+    const url = URL.createObjectURL(blob), a = h("a", { href: url, download: `deploy-journaux-${new Date().toISOString().slice(0, 10)}.${format === "json" ? "json" : "csv"}` });
     a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const top = h("div", { class: "fe-log-top" },
-    h("div", {}, h("h2", {}, "Centre des journaux"), h("p", { class: "fe-meta" }, \`\${repo} · activité GitHub, workflows, jobs, étapes et déploiements\`)),
+    h("div", {}, h("h2", {}, "Centre des journaux"), h("p", { class: "fe-meta" }, `${repo} · activité GitHub, workflows, jobs, étapes et déploiements`)),
     h("div", { class: "fe-log-actions" }, toggle, btn("Actualiser", "refresh-cw", () => render(S.cur)), btn("CSV", "file-spreadsheet", () => download("csv")), btn("JSON", "file-json", () => download("json"))));
   const filtersHead = h("div", { class: "fe-log-results-head" }, h("b", {}, "Événements"), countText, reset);
   root.append(top, summary, h("div", { class: "fe-log-explainer" }, ic("info"), h("span", {}, "Les journaux regroupent les événements fournis par l’API GitHub. Les détails de console complets d’un workflow restent accessibles depuis « Ouvrir sur GitHub ».")), filters, filtersHead, h("div", { class: "fe-log-workspace" }, list, detail));
