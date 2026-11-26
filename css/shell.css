@@ -253,6 +253,18 @@ body {
     outline-offset: 2px;
 }
 
+/* Le bouton de repli est un SVG après l'initialisation de Lucide.
+   Évite le contour noir au clic, tout en gardant un indicateur clavier. */
+.nav-toggle:focus {
+    outline: none;
+}
+
+.nav-toggle:focus-visible {
+    outline: 2px solid #7C9BC0;
+    outline-offset: 4px;
+    border-radius: 4px;
+}
+
 .nav-group-title span {
     transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
