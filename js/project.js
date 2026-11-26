@@ -510,7 +510,7 @@ async function vLogs(root) {
         ["Erreurs", String(count.errors), "alert-triangle"],
         ["Échecs de workflow", String(count.failed), "x-circle"],
         ["En cours", String(count.running), "loader-circle"]
-      ].map(([label, value, icon]) => h("div", { class: "fe-log-stat" }, h("span", { class: "fe-log-stat-icon" }, ic(icon)), h("div", {}, h("span", { class: "fe-meta" }, label), h("b", {}, value)))
+      ].map(([label, value, icon]) => h("div", { class: "fe-log-stat" }, h("span", { class: "fe-log-stat-icon" }, ic(icon)), h("div", {}, h("span", { class: "fe-meta" }, label), h("b", {}, value))))
     );
     countText.textContent = `${shown.length} événement(s) affiché(s) sur ${events.length} · ${runList.length} exécution(s) Actions chargée(s)`;
     list.replaceChildren();
