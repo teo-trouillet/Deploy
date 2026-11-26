@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Deploy : un tableau de bord pour déployer et gérer tes sites GitHub Pages.">
+    <title>Deploy</title>
+    <script>try{var t=localStorage.getItem("fe_theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+    <link rel="stylesheet" href="css/shell.css">
+    <link rel="stylesheet" href="css/views.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="loading-screen">
+    <section class="section nav">
+        <div class="title">
+            <h1>Deploy</h1>
+            <div class="actions">
+                <i data-lucide="panel-left" class="nav-toggle" role="button" tabindex="0" aria-label="Réduire ou déplier le menu"></i>
+            </div>
+        </div>
+
+        <nav aria-label="Navigation principale">
+            <button type="button" class="project-switcher" id="project-switcher" aria-haspopup="dialog" aria-expanded="false" title="Changer de projet">
+                <i data-lucide="folder-git-2"></i>
+                <span id="project-name">Choisir un projet</span>
+                <i data-lucide="chevrons-up-down" class="switcher-chevron"></i>
+            </button>
+            <div class="nav-group-first">
+                <a href="#" class="nav-item">
+                    <i data-lucide="folder-git-2"></i>
+                    <span>Projets</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Aperçu</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <i data-lucide="rocket"></i>
+                    <span>Déploiements</span>
+                </a>
+            </div>
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-observabilite">
+                    <i data-lucide="eye"></i>
+                    <span>Observabilité</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-observabilite" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="terminal"></i>
+                            <span>Journaux</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="bar-chart-3"></i>
+                            <span>Statistiques</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-projet">
+                    <i data-lucide="folder-git-2"></i>
+                    <span>Projet</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-projet" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="folder-open"></i>
+                            <span>Fichiers</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="braces"></i>
+                            <span>Variables d'environnement</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="link-2"></i>
+                            <span>Domaines</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="layers"></i>
+                            <span>Environnements</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-versions">
+                    <i data-lucide="tag"></i>
+                    <span>Versions</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-versions" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="package"></i>
+                            <span>Publications</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="tag"></i>
+                            <span>Tags</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="scroll-text"></i>
+                            <span>Changelog</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="git-compare"></i>
+                            <span>Comparer</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-group-first">
+                <a href="#" class="nav-item">
+                    <i data-lucide="life-buoy"></i>
+                    <span>Support</span>
+                </a>
+            </div>
+            <div class="nav-group">
+                <button type="button" class="nav-group-title" aria-expanded="false" aria-controls="nav-parametres">
+                    <i data-lucide="settings"></i>
+                    <span>Paramètres</span>
+                    <i data-lucide="chevron-right" class="group-chevron"></i>
+                </button>
+                <div class="nav-group-items" id="nav-parametres" aria-hidden="true" inert>
+                    <div class="nav-group-items-inner">
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="sliders-horizontal"></i>
+                            <span>Général</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="git-branch"></i>
+                            <span>Git</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="shield"></i>
+                            <span>Sécurité</span>
+                        </a>
+                        <a href="#" class="nav-item nav-item-left">
+                            <i data-lucide="activity"></i>
+                            <span>Activité</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <footer class="nav-footer">
+            <div class="user-profile">
+                <div class="user-avatar">?</div>
+                <div class="user-info">
+                    <span class="user-name">Invité</span>
+                    <span class="user-role">Non connecté</span>
+                </div>
+                <button type="button" class="user-settings" aria-label="Paramètres du profil">
+                    <i data-lucide="square-arrow-left-enter"></i>
+                </button>
+            </div>
+        </footer>
+    </section>
+
+    <section class="section content">
+        <header class="content-header">
+            <button type="button" class="mobile-menu" aria-label="Ouvrir le menu"><i data-lucide="menu"></i></button>
+            <span id="content-title">/ Accueil</span>
+            <div class="searchbar" id="searchbar">
+                <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true">
+                    <circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1.25"/>
+                    <line x1="14.5" y1="14.5" x2="19" y2="19" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+                </svg>
+                <span class="placeholder">Rechercher</span>
+                <input type="text" class="search-input" placeholder="Rechercher une tâche, un utilisateur..." aria-label="Rechercher une tâche ou un utilisateur"/>
+            </div>
+        </header>
+
+        <main class="content-body">
+            <span>Bienvenue</span>
+        </main>
+    </section>
+
+    <aside class="right-rail" aria-label="Raccourcis rapides">
+        <div class="right-rail-actions">
+            <button type="button" class="right-rail-item" data-action="new" aria-label="Nouveau projet" title="Nouveau projet"><i data-lucide="plus"></i></button>
+            <button type="button" class="right-rail-item" data-action="deploy" aria-label="Déployer" title="Déployer le projet"><i data-lucide="rocket"></i></button>
+            <button type="button" class="right-rail-item" data-action="refresh" aria-label="Rafraîchir" title="Rafraîchir"><i data-lucide="refresh-cw"></i></button>
+        </div>
+        <div class="right-rail-footer">
+            <button type="button" class="right-rail-item" id="theme-toggle" aria-label="Changer de thème" title="Thème : auto / clair / sombre"><i data-lucide="sun-moon"></i></button>
+            <button type="button" class="right-rail-item" aria-label="Paramètres rapides" title="Paramètres">
+                <i data-lucide="sliders-horizontal"></i>
+            </button>
+        </div>
+    </aside>
+
+    <script src="js/app.js"></script>
+    <script src="js/project.js"></script>
+<script src="js/shell.js"></script>
+
+</body>
+</html>
