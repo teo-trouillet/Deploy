@@ -212,11 +212,29 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop()
 async function vGeneral(root) {
   const m = await gh(`/repos/${cur()}`);
   const set = (t, desc, body, foot) => h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" }, h("b", {}, t), h("p", { class: "fe-meta" }, desc), body), h("div", { class: "fe-setfoot" }, h("span", { class: "fe-meta" }, foot)));
-  root.append(h("div", { class: "fe-settings" },
+  const askDelete = (name) => new Promise((res) => {
+    const inp = h("input", { class: "fe-input", placeholder: name }), ok = btn("Supprimer définitivement", "trash-2", () => { o.remove(); res(true); }, "danger");
+    ok.disabled = true; inp.addEventListener("input", () => (ok.disabled = inp.value.trim() !== name));
+    const o = h("div", { class: "fe-overlay" }, h("div", { class: "fe-loader" }, h("span", { class: "fe-lico danger" }, ic("trash-2")), h("b", { class: "fe-ltitle" }, `Supprimer ${name} ?`),
+      h("span", { class: "fe-meta" }, "Le dépôt GitHub, son code, ses déploiements et ses previews seront supprimés définitivement. Cette action est irréversible."), h("span", { class: "fe-meta", style: "margin-top:10px" }, `Tape « ${name} » pour confirmer`), inp,
+      h("div", { class: "fe-bar", style: "margin:10px 0 0;justify-content:flex-end" }, btn("Annuler", "x", () => { o.remove(); res(false); }), ok)));
+    document.body.appendChild(o); icons(); inp.focus();
+  });
+  const del = () => act(async () => {
+    if (!(await askDelete(m.name))) return;
+    const L = loading("Suppression de " + m.name, 2); L.step("Suppression du dépôt GitHub");
+    try { await gh(`/repos/${m.full_name}`, { method: "DELETE" }); } catch (e) { L.close(); throw new Error(/admin|delete_repo|Forbidden|Must have/i.test(e.message) ? "Suppression refusée : ajoute le droit delete_repo à ton token (Paramètres › Git)." : e.message); }
+    L.step("Nettoyage"); SET("fe_repo"); S.repos = null; window.DP.syncSwitcher(); L.done(); toast("Projet supprimé"); setTimeout(() => { L.close(); go("Projets"); }, 700);
+  });
+  const danger = h("div", { class: "fe-set fe-danger" }, h("div", { class: "fe-setbody" }, h("b", {}, "Zone de danger"), h("p", { class: "fe-meta" }, "Supprime définitivement ce projet : dépôt GitHub, code, déploiements et previews. Cette action est irréversible.")),
+    h("div", { class: "fe-setfoot fe-footrow" }, h("span", { class: "fe-meta" }, "Nécessite le droit delete_repo sur ton token."), btn("Supprimer le projet", "trash-2", del, "danger")));
+  const idcard = h("div", { class: "fe-idcard" }, h("img", { class: "fe-uava lg", src: m.owner.avatar_url, alt: "" }), h("div", { class: "fe-main" }, h("b", { class: "fe-herotitle" }, m.name), h("span", { class: "fe-meta" }, m.description || `${m.owner.login} · ${m.default_branch}`)),
+    h("span", { class: "fe-pill " + (m.private ? "prev" : "prod") }, m.private ? "Privé" : "Public"), link(m.html_url, "GitHub"));
+  root.append(h("div", { class: "fe-settings" }, idcard,
     set("Nom du projet", "Nom du dépôt GitHub qui héberge ce projet.", h("div", { class: "fe-field" }, h("span", {}, `github.com/${m.owner.login}/`), h("input", { class: "fe-input", value: m.name, readonly: true })), "Se renomme depuis GitHub › Settings."),
     set("ID du projet", "Utilisé pour interagir avec l'API GitHub.", h("div", { class: "fe-field" }, h("code", {}, String(m.id)), btn("Copier", "copy", () => navigator.clipboard.writeText(String(m.id)).then(() => toast("ID copié")))), "Identifiant numérique du dépôt."),
     set("Branche de production", "Chaque push sur cette branche déclenche un déploiement.", h("div", { class: "fe-field" }, h("code", {}, m.default_branch)), "Modifiable depuis GitHub › Settings › Branches."),
-    set("Visibilité", "Détermine qui peut voir le code du dépôt.", h("div", { class: "fe-field" }, h("code", {}, m.private ? "Privé" : "Public"), link(m.html_url, "Ouvrir sur GitHub")), "Gérée par GitHub.")));
+    set("Visibilité", "Détermine qui peut voir le code du dépôt.", h("div", { class: "fe-field" }, h("code", {}, m.private ? "Privé" : "Public"), link(m.html_url, "Ouvrir sur GitHub")), "Gérée par GitHub."), danger));
 }
 Object.assign(VIEWS, { "Général": vGeneral, "Aperçu": vOverview, "Previews": vPreviews, "Logs": vLogs, "Fichiers": vFiles, "Analytics": vAnalytics, "Environnements": vPreviews });
 /* ---- Versions, Support, Logs et Analytics façon Vercel ---- */
@@ -307,6 +325,16 @@ async function vAnalytics2(root) {
   } catch (e) { root.append(panel("Trafic indisponible", h("span", { class: "fe-meta" }, e.message + " (les stats de trafic demandent les droits d'écriture sur le dépôt)."))); }
 }
 Object.assign(VIEWS, { "Releases": vReleases, "Tags": vTags, "Changelog": (r) => cmpView(r, true), "Comparer": (r) => cmpView(r, false), "Support": vSupport, "Logs": vLogs2, "Analytics": vAnalytics2 });
+async function vSecurity(root) {
+  const item = (icon, t, d) => h("div", { class: "fe-secitem" }, h("span", { class: "fe-iconbox" }, ic(icon)), h("div", {}, h("b", {}, t), h("p", { class: "fe-meta" }, d)));
+  root.append(h("div", { class: "fe-settings" }, h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" },
+    item("hard-drive", "Token stocké localement", "Ton token reste dans le localStorage de ce navigateur. Il n'est jamais envoyé à un serveur de Deploy."),
+    item("send", "Envoyé uniquement à GitHub", "Les requêtes partent directement vers api.github.com, rien d'autre."),
+    item("clock", "Préfère un token à durée limitée", "Choisis une expiration courte quand tu le crées : il se désactive tout seul."),
+    item("shield-check", "Droits minimaux", "repo et workflow suffisent. delete_repo n'est utile que pour supprimer un projet.")),
+    h("div", { class: "fe-setfoot fe-footrow" }, h("span", { class: "fe-meta" }, "Tu peux révoquer le token à tout moment."), link("https://github.com/settings/tokens", "Gérer mes tokens")))));
+}
+Object.assign(VIEWS, { "Sécurité": vSecurity });
 Object.assign(window.DP, { setProject, projBar, syncSwitcher });
 syncSwitcher();
 // Ouvre les deux premiers groupes (Projet, Déploiements) après l'animation d'arrivée.

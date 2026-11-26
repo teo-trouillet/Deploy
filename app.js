@@ -120,15 +120,17 @@ const match = (...s) => !S.q || s.join(" ").toLowerCase().includes(S.q);
 
 /* ---------- Vues ---------- */
 async function vConnect(root) {
-  const input = h("input", { class: "fe-input", type: "password", placeholder: "ghp_… ou github_pat_…", style: "min-width:320px" });
-  const status = h("div", { class: "fe-meta" }, S.user ? `Connecté en tant que ${S.user.login}` : "Non connecté");
-  root.append(h("div", { class: "fe-card" },
-    h("div", {}, "Colle un Personal Access Token GitHub avec les droits ", h("b", {}, "repo"), " et ", h("b", {}, "workflow"), ". Il reste uniquement dans ton navigateur (localStorage) et n'est envoyé qu'à api.github.com."),
-    h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token"),
-    h("div", { class: "fe-bar", style: "margin:0" }, input,
-      btn("Se connecter", "log-in", () => act(async () => { SET("fe_token", input.value.trim()); setProfile(await gh("/user")); S.repos = null; status.textContent = "Connecté en tant que " + S.user.login; input.value = ""; }, "Connecté"), "primary"),
-      btn("Se déconnecter", "log-out", () => { SET("fe_token"); SET("fe_repo"); S.user = null; S.repos = null; status.textContent = "Non connecté"; toast("Déconnecté"); })),
-    status));
+  if (LS("fe_token") && !S.user) try { setProfile(await gh("/user")); } catch (e) { /* token invalide */ }
+  const u = S.user, input = h("input", { class: "fe-input", type: "password", placeholder: "ghp_… ou github_pat_…", autocomplete: "off" });
+  const set = (t, desc, foot, ...body) => h("div", { class: "fe-set" }, h("div", { class: "fe-setbody" }, h("b", {}, t), h("p", { class: "fe-meta" }, desc), ...body), foot && h("div", { class: "fe-setfoot fe-footrow" }, ...foot));
+  const connect = () => act(async () => { SET("fe_token", input.value.trim()); setProfile(await gh("/user")); S.repos = null; render(S.cur); }, "Connecté");
+  root.append(h("div", { class: "fe-settings" },
+    set("Compte GitHub", "Le compte utilisé par Deploy pour lire et modifier tes dépôts.", null,
+      h("div", { class: "fe-conn" }, u ? h("img", { class: "fe-uava", src: u.avatar_url, alt: "" }) : h("span", { class: "fe-uava" }, ic("user")), h("div", { class: "fe-main" }, h("b", {}, u ? u.login : "Non connecté"), h("span", { class: "fe-meta" }, u ? "Connecté à GitHub" : "Ajoute un token pour commencer")), h("span", { class: "fe-pill " + (u ? "prod" : "") }, u ? "Actif" : "Hors ligne")),
+      u && h("div", { class: "fe-bar", style: "margin:0" }, btn("Se déconnecter", "log-out", () => { SET("fe_token"); SET("fe_repo"); S.user = null; S.repos = null; toast("Déconnecté"); render(S.cur); }))),
+    set("Personal Access Token", "Colle un token GitHub. Il reste uniquement dans ton navigateur.", [h("span", { class: "fe-meta" }, "Droits requis : repo, workflow, delete_repo."), h("a", { class: "fe-btn", href: "https://github.com/settings/tokens/new?scopes=repo,workflow,delete_repo&description=Deploy", target: "_blank", rel: "noopener" }, ic("external-link"), "Créer un token")],
+      h("div", { class: "fe-field" }, input, btn("Se connecter", "log-in", connect, "primary")))));
+  input.addEventListener("keydown", (e) => e.key === "Enter" && connect());
 }
 
 async function vProjects(root) {
@@ -223,10 +225,15 @@ function runRow(repo, r, firstOk, reload) {
 
 async function vActivity(root) {
   if (!S.user) setProfile(await gh("/user"));
-  const ev = await gh(`/users/${S.user.login}/events?per_page=40`);
-  const box = h("div", { class: "fe-list" }, ev.filter((e) => match(e.repo.name, e.type)).map((e) => h("div", { class: "fe-row" }, h("span", { class: "fe-dot ok" }),
-    h("div", { class: "fe-main" }, h("b", {}, e.type.replace("Event", "")), h("span", { class: "fe-meta" }, `${e.repo.name} · ${ago(e.created_at)}${e.payload.commits ? " · " + e.payload.commits.length + " commit(s)" : ""}`)))));
-  root.append(h("div", { class: "fe-bar" }), box);
+  const ev = (await gh(`/users/${S.user.login}/events?per_page=60`)).filter((e) => match(e.repo.name, e.type));
+  const T = { PushEvent: ["git-commit-horizontal", "Push"], PullRequestEvent: ["git-pull-request", "Pull request"], CreateEvent: ["plus-circle", "Création"], DeleteEvent: ["trash-2", "Suppression"], IssuesEvent: ["circle-dot", "Ticket"], IssueCommentEvent: ["message-circle", "Commentaire"], WatchEvent: ["star", "Étoile"], ForkEvent: ["git-fork", "Fork"], ReleaseEvent: ["package", "Release"] };
+  const day = (d) => { const x = new Date(d), k = Math.round((new Date(new Date().toDateString()) - new Date(x.toDateString())) / 864e5); return k === 0 ? "Aujourd'hui" : k === 1 ? "Hier" : x.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }); };
+  const groups = {}; ev.forEach((e) => (groups[day(e.created_at)] ||= []).push(e));
+  root.append(...Object.entries(groups).flatMap(([d, es]) => [h("div", { class: "fe-sec" }, d), h("div", { class: "fe-list" }, es.map((e) => {
+    const [i, l] = T[e.type] || ["activity", e.type.replace("Event", "")], c = e.payload.commits?.[0]?.message?.split("\n")[0] || e.payload.pull_request?.title || e.payload.issue?.title || e.payload.ref || "";
+    return h("div", { class: "fe-row" }, h("span", { class: "fe-iconbox sm" }, ic(i)), h("div", { class: "fe-main" }, h("b", {}, l), h("span", { class: "fe-meta fe-ell" }, e.repo.name + (c ? " · " + c : ""))), h("span", { class: "fe-meta" }, ago(e.created_at)));
+  }))]));
+  if (!ev.length) root.append(h("div", { class: "fe-empty" }, "Aucune activité récente."));
 }
 
 async function vDomains(root) {

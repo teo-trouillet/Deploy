@@ -268,3 +268,15 @@ body { height: 100vh; height: 100dvh; min-height: 0; grid-template-rows: minmax(
 .fe-lstate { position: relative; width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 2px solid #e2e5e9; border-top-color: #111; animation: fe-rot .8s linear infinite; transition: background-color .25s ease, border-color .25s ease; } .fe-lstate svg { width: 11px; height: 11px; stroke-width: 3; opacity: 0; transform: scale(.4); transition: opacity .2s ease, transform .3s cubic-bezier(.34, 1.56, .64, 1); }
 .fe-steps-list li.done .fe-lstate { animation: none; background: var(--ok, #1f9d55); border-color: var(--ok, #1f9d55); color: #fff; } .fe-steps-list li.done .fe-lstate svg { opacity: 1; transform: scale(1); }
 @media (prefers-reduced-motion: reduce) { .fe-loader, .fe-lico { animation: none; } .fe-lstate { animation-duration: 2s; } }
+
+/* ===== Paramètres : Général, Git, Sécurité, Activité ===== */
+.fe-footrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fe-uava { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; display: grid; place-items: center; background: var(--soft); border: 1px solid var(--border-color); } .fe-uava.lg { width: 48px; height: 48px; border-radius: 12px; }
+.fe-idcard { display: flex; align-items: center; gap: 14px; padding: 18px 22px; border: 1px solid #e3e6ea; border-radius: 14px; background: #fff; box-shadow: var(--shadow); flex-wrap: wrap; } .fe-idcard .fe-herotitle { font-size: 1.1rem; font-weight: 600; letter-spacing: -.01em; }
+.fe-conn { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #eef0f2; border-radius: 12px; background: #fafafb; } .fe-conn + .fe-bar { margin-top: 4px; }
+.fe-secitem { display: flex; gap: 14px; align-items: flex-start; padding: 8px 0; } .fe-secitem + .fe-secitem { border-top: 1px solid #eef0f2; padding-top: 16px; margin-top: 8px; } .fe-secitem b { font-size: .86rem; font-weight: 600; } .fe-secitem p { margin: 3px 0 0; line-height: 1.5; }
+.fe-iconbox.sm { width: 32px; height: 32px; border-radius: 9px; flex: none; } .fe-iconbox.sm svg { width: 15px; height: 15px; }
+.fe-field .fe-input { flex: 1; min-width: 220px; }
+.fe-danger { border-color: #f0c6c2; } .fe-danger .fe-setbody > b { color: #b3261e; } .fe-danger .fe-setfoot { background: #fff6f5; border-top-color: #f0c6c2; }
+.fe-btn.danger { background: #d64545; border-color: #d64545; color: #fff; box-shadow: 0 1px 2px rgba(179, 38, 30, .3); } .fe-btn.danger:hover { background: #c13a3a; } .fe-btn:disabled { opacity: .45; cursor: not-allowed; }
+.fe-lico.danger { background: linear-gradient(145deg, #e25a52, #b3261e); animation: none; }
