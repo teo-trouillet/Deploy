@@ -261,21 +261,311 @@ async function vSupport(root) {
 }
 async function vLogs(root) {
   const repo = cur();
-  const [runs, commits, prs] = await Promise.all([gh(`/repos/${repo}/actions/runs?per_page=50`), gh(`/repos/${repo}/commits?per_page=30`).catch(() => []), gh(`/repos/${repo}/pulls?state=all&per_page=20&sort=updated`)]);
-  const ev = [...runs.workflow_runs.map((r) => ({ t: r.updated_at, k: "DEPLOY", lvl: r.conclusion === "failure" ? "error" : r.status !== "completed" ? "warn" : "ok", m: `${r.name} · ${r.head_branch} · ${r.head_sha.slice(0, 7)} · ${r.status === "completed" ? r.conclusion + " (" + dur(r.run_started_at, r.updated_at) + ")" : "en cours"}` })),
-    ...commits.map((c) => ({ t: c.commit.author.date, k: "COMMIT", lvl: "info", m: `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]} — ${c.commit.author.name}` })),
-    ...prs.map((p) => ({ t: p.merged_at || p.closed_at || p.created_at, k: "PR", lvl: "info", m: `#${p.number} ${p.merged_at ? "fusionnée" : p.state === "open" ? "ouverte" : "fermée"} · ${p.title}` }))].sort((a, b) => new Date(b.t) - new Date(a.t));
-  const K = { DEPLOY: "Déploiements", COMMIT: "Commits", PR: "PR" }, lv = (e) => (e.lvl === "error" ? "Erreur" : e.lvl === "warn" ? "Avertissement" : "Info"), on = {}, con = h("div", { class: "fe-console" });
-  let shown = [];
-  const draw = () => { shown = ev.filter((e) => on[K[e.k]] !== false && on[lv(e)] !== false && match(e.m));
-    con.replaceChildren(...shown.map((e) => h("div", { class: "ln " + e.lvl }, h("span", {}, new Date(e.t).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "medium" })), h("b", { class: "k-" + e.k }, e.k), h("span", {}, e.m)))); if (!shown.length) con.append(h("div", { class: "ln" }, "Aucun événement.")); };
-  const box = (n, c) => h("label", { class: "fe-check" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { on[n] = e.target.checked; draw(); } }), n, h("span", { class: "fe-meta" }, String(c)));
-  const side = h("div", { class: "fe-filters" }, h("b", {}, "Filtres"), h("div", { class: "fe-sec" }, "Source"), ...Object.entries(K).map(([k, n]) => box(n, ev.filter((e) => e.k === k).length)), h("div", { class: "fe-sec" }, "Niveau"), ...["Info", "Avertissement", "Erreur"].map((n) => box(n, ev.filter((e) => lv(e) === n).length)));
-  const bar = h("div", { class: "fe-bar", style: "margin-top:0" }, btn("Direct", "play-circle", () => { S.live = !S.live; render(S.cur); }, S.live ? "primary" : ""), btn("Actualiser", "refresh-cw", () => render(S.cur)),
-    btn("Télécharger", "download", () => { const a = h("a", { href: URL.createObjectURL(new Blob([shown.map((e) => `${e.t} ${e.k} ${e.m}`).join("\n")], { type: "text/plain" })), download: "logs.txt" }); a.click(); }));
-  root.append(h("div", { class: "fe-logs" }, side, h("div", {}, bar, con)));
+  const repoUrl = "https://github.com/" + repo;
+  const safe = async (path, fallback = []) => { try { return await gh(path); } catch { return fallback; } };
+  const [runData, commits, prs, repoEvents, deployments] = await Promise.all([
+    safe(`/repos/${repo}/actions/runs?per_page=100`, { workflow_runs: [] }),
+    safe(`/repos/${repo}/commits?per_page=100`),
+    safe(`/repos/${repo}/pulls?state=all&per_page=100&sort=updated&direction=desc`),
+    safe(`/repos/${repo}/events?per_page=100`),
+    safe(`/repos/${repo}/deployments?per_page=50`)
+  ]);
+
+  const events = [];
+  const add = (event) => {
+    if (!event || !event.t || !event.m) return;
+    events.push({ id: event.id || event.k + "-" + events.length, actor: "GitHub", branch: "", sha: "", url: repoUrl, details: "", ...event });
+  };
+  const runList = runData.workflow_runs || [];
+  const conclusionLevel = (status, conclusion) => {
+    if (status !== "completed") return "warn";
+    if (["failure", "timed_out", "action_required", "startup_failure"].includes(conclusion)) return "error";
+    if (["cancelled", "skipped", "neutral"].includes(conclusion)) return "warn";
+    return "ok";
+  };
+
+  runList.forEach((r) => {
+    const started = r.run_started_at || r.created_at;
+    const end = r.updated_at || r.created_at;
+    const lvl = conclusionLevel(r.status, r.conclusion);
+    add({
+      id: "run-" + r.id, t: end, k: "RUN", lvl, status: r.status === "completed" ? (r.conclusion || "completed") : r.status,
+      branch: r.head_branch || "", sha: r.head_sha || "", actor: r.actor?.login || r.triggering_actor?.login || "Inconnu",
+      m: `${r.name || r.display_title || "Workflow"} · ${r.display_title || r.head_branch || "Exécution"}`,
+      details: [
+        "Workflow : " + (r.name || "Workflow"),
+        "État : " + (r.status === "completed" ? r.conclusion || "terminé" : r.status),
+        "Branche : " + (r.head_branch || "—"),
+        "Commit : " + (r.head_sha || "").slice(0, 12),
+        "Déclenché par : " + (r.event || "inconnu") + " · " + (r.actor?.login || "inconnu"),
+        "Début : " + (started || "inconnu"),
+        "Fin : " + (r.status === "completed" ? end : "Toujours en cours"),
+        "Durée : " + (started && r.status === "completed" ? dur(started, end) : "—"),
+        "Tentative : " + (r.run_attempt || 1)
+      ].join("\n"),
+      url: r.html_url || repoUrl,
+      source: "Actions"
+    });
+  });
+
+  commits.forEach((c) => add({
+    id: "commit-" + c.sha, t: c.commit?.author?.date || c.commit?.committer?.date,
+    k: "COMMIT", lvl: "info", status: "commit", branch: "", sha: c.sha,
+    actor: c.author?.login || c.commit?.author?.name || "Auteur inconnu",
+    m: (c.commit?.message || "Commit sans message").split("\n")[0],
+    details: [
+      "Commit : " + c.sha,
+      "Auteur : " + (c.commit?.author?.name || "Inconnu") + (c.author?.login ? " (@" + c.author.login + ")" : ""),
+      "E-mail : " + (c.commit?.author?.email || "—"),
+      "Date auteur : " + (c.commit?.author?.date || "—"),
+      "Date commit : " + (c.commit?.committer?.date || "—"),
+      "Message complet :\n" + (c.commit?.message || "—")
+    ].join("\n"),
+    url: c.html_url || repoUrl, source: "Git"
+  }));
+
+  prs.forEach((p) => {
+    const state = p.merged_at ? "merged" : p.state;
+    add({
+      id: "pr-" + p.number, t: p.merged_at || p.closed_at || p.updated_at || p.created_at,
+      k: "PR", lvl: p.merged_at ? "ok" : p.state === "open" ? "info" : "warn", status: state,
+      branch: p.head?.ref || "", sha: p.head?.sha || "", actor: p.user?.login || "Inconnu",
+      m: `#${p.number} · ${p.title}`,
+      details: [
+        "Pull request : #" + p.number,
+        "État : " + (p.merged_at ? "fusionnée" : p.state === "open" ? "ouverte" : "fermée"),
+        "Auteur : @" + (p.user?.login || "inconnu"),
+        "Branche : " + (p.head?.ref || "—") + " → " + (p.base?.ref || "—"),
+        "Créée : " + (p.created_at || "—"),
+        "Mise à jour : " + (p.updated_at || "—"),
+        "Fusion : " + (p.merged_at || "non fusionnée"),
+        "Commits : " + (p.commits ?? "—") + " · Fichiers : " + (p.changed_files ?? "—"),
+        "Description :\n" + (p.body || "Aucune description.")
+      ].join("\n"),
+      url: p.html_url || repoUrl, source: "Pull requests"
+    });
+  });
+
+  repoEvents.forEach((e) => {
+    const p = e.payload || {}, type = e.type || "Event";
+    const actor = e.actor?.login || "Inconnu";
+    let message = type.replace(/Event$/, "");
+    let source = "Activité GitHub", level = "info", details = [];
+    if (type === "PushEvent") {
+      const commitsInPush = p.commits || [];
+      message = `Push · ${p.ref?.replace("refs/heads/", "") || "branche inconnue"} · ${commitsInPush.length} commit(s)`;
+      source = "Git"; details = commitsInPush.slice(0, 10).map((c) => (c.sha || "").slice(0, 7) + " " + (c.message || "").split("\n")[0]);
+    } else if (type === "CreateEvent") {
+      message = `Création ${p.ref_type || "ressource"} · ${p.ref || repo}`; source = "Git";
+    } else if (type === "DeleteEvent") {
+      message = `Suppression ${p.ref_type || "ressource"} · ${p.ref || "—"}`; source = "Git"; level = "warn";
+    } else if (type === "PullRequestEvent") {
+      const pr = p.pull_request || {}; message = `PR #${pr.number || "?"} · ${p.action || "mise à jour"} · ${pr.title || ""}`; source = "Pull requests"; level = p.action === "closed" && !pr.merged_at ? "warn" : "info";
+    } else if (type === "IssuesEvent") {
+      message = `Issue #${p.issue?.number || "?"} · ${p.action || "mise à jour"} · ${p.issue?.title || ""}`; source = "Issues";
+    } else if (type === "ReleaseEvent") {
+      message = `Release · ${p.action || "mise à jour"} · ${p.release?.name || p.release?.tag_name || ""}`; source = "Versions";
+    } else if (type === "WorkflowRunEvent") {
+      message = `Workflow · ${p.action || "mise à jour"} · ${p.workflow_run?.name || ""}`; source = "Actions";
+    } else if (type === "WatchEvent") {
+      message = p.action === "started" ? "Dépôt ajouté aux favoris" : "Activité Watch";
+    } else if (type === "ForkEvent") {
+      message = "Dépôt forké";
+    } else if (type === "IssueCommentEvent") {
+      message = `Commentaire sur ${p.issue?.pull_request ? "PR" : "issue"} #${p.issue?.number || "?"}`; source = "Issues";
+    } else {
+      message = `${message} · ${p.action || p.ref || ""}`;
+    }
+    add({
+      id: "event-" + e.id, t: e.created_at, k: "EVENT", lvl: level, status: p.action || type,
+      branch: p.ref?.replace("refs/heads/", "") || "", actor,
+      m: message, details: ["Événement : " + type, "Action : " + (p.action || "—"), "Acteur : @" + actor, ...details].join("\n"),
+      url: e.repo?.name ? "https://github.com/" + e.repo.name : repoUrl, source
+    });
+  });
+
+  // Historique des déploiements GitHub et de leurs statuts.
+  for (const d of deployments.slice(0, 25)) {
+    const statuses = await safe(`/repos/${repo}/deployments/${d.id}/statuses?per_page=10`, []);
+    const latest = statuses[0] || {};
+    const state = latest.state || "pending";
+    const lvl = ["failure", "error"].includes(state) ? "error" : ["pending", "in_progress", "queued"].includes(state) ? "warn" : state === "success" ? "ok" : "info";
+    add({
+      id: "deployment-" + d.id, t: latest.created_at || d.created_at, k: "DEPLOYMENT", lvl, status: state,
+      branch: d.ref || "", sha: d.sha || "", actor: d.creator?.login || "Inconnu",
+      m: `Déploiement · ${state} · ${d.environment || "environnement par défaut"}`,
+      details: [
+        "Déploiement : #" + d.id, "Environnement : " + (d.environment || "—"),
+        "Référence : " + (d.ref || "—"), "SHA : " + (d.sha || "—"),
+        "Créé : " + (d.created_at || "—"), "Dernier statut : " + state,
+        "Description : " + (latest.description || d.description || "—"),
+        "URL cible : " + (latest.environment_url || latest.target_url || "—")
+      ].join("\n"),
+      url: latest.target_url || latest.environment_url || repoUrl, source: "Déploiements"
+    });
+  }
+
+  // Détail des jobs et étapes pour les exécutions récentes : c'est là que se trouvent
+  // les échecs précis des étapes, en plus du résumé du workflow.
+  const recentRuns = runList.slice(0, 18);
+  const jobResults = await Promise.all(recentRuns.map(async (r) => {
+    try { return { run: r, data: await gh(`/repos/${repo}/actions/runs/${r.id}/jobs?per_page=100`) }; }
+    catch { return { run: r, data: { jobs: [] } }; }
+  }));
+  jobResults.forEach(({ run, data }) => (data.jobs || []).forEach((job) => {
+    const state = job.conclusion || job.status || "unknown";
+    const lvl = conclusionLevel(job.status, job.conclusion);
+    const stepSummary = (job.steps || []).map((s) => `${s.conclusion || s.status || "pending"} · ${s.name}`).join("\n");
+    add({
+      id: "job-" + job.id, t: job.completed_at || job.started_at || run.updated_at,
+      k: "JOB", lvl, status: state, branch: run.head_branch || "", sha: run.head_sha || "",
+      actor: run.actor?.login || "Inconnu",
+      m: `Job · ${job.name} · ${state}`,
+      details: [
+        "Workflow : " + (run.name || "Workflow"),
+        "Job : " + job.name, "État : " + state,
+        "Début : " + (job.started_at || "—"), "Fin : " + (job.completed_at || "en cours"),
+        "Durée : " + (job.started_at && job.completed_at ? dur(job.started_at, job.completed_at) : "—"),
+        "Étapes :\n" + (stepSummary || "Aucune étape détaillée disponible."),
+        "Les sorties console complètes sont consultables sur la page GitHub de l'exécution."
+      ].join("\n"),
+      url: job.html_url || run.html_url || repoUrl, source: "Jobs Actions"
+    });
+    (job.steps || []).forEach((step, i) => {
+      if (step.conclusion === "success" && i > 2) return;
+      add({
+        id: "step-" + job.id + "-" + i,
+        t: step.completed_at || step.started_at || job.completed_at || run.updated_at,
+        k: "STEP", lvl: conclusionLevel(step.status, step.conclusion),
+        status: step.conclusion || step.status || "pending", branch: run.head_branch || "",
+        sha: run.head_sha || "", actor: run.actor?.login || "Inconnu",
+        m: `Étape · ${step.name} · ${step.conclusion || step.status || "en attente"}`,
+        details: [
+          "Workflow : " + (run.name || "Workflow"), "Job : " + job.name,
+          "Étape : " + step.name, "État : " + (step.conclusion || step.status || "en attente"),
+          "Début : " + (step.started_at || "—"), "Fin : " + (step.completed_at || "—"),
+          step.number ? "Numéro d'étape : " + step.number : ""
+        ].filter(Boolean).join("\n"),
+        url: job.html_url || run.html_url || repoUrl, source: "Étapes Actions"
+      });
+    });
+  }));
+
+  events.sort((a, b) => new Date(b.t) - new Date(a.t));
+  const count = { total: events.length, errors: events.filter((e) => e.lvl === "error").length, running: runList.filter((r) => r.status !== "completed").length, failed: runList.filter((r) => r.conclusion === "failure").length };
+  const state = { q: S.q || "", source: "Toutes les sources", level: "Tous les niveaux", period: "30", branch: "Toutes les branches", status: "Tous les états", selected: null };
+  const search = h("input", { class: "fe-input fe-log-search", type: "search", placeholder: "Rechercher un message, commit, auteur, branche…", "aria-label": "Rechercher dans les journaux", value: state.q });
+  const source = h("select", { class: "fe-select", "aria-label": "Filtrer par source" }, ["Toutes les sources", "Actions", "Jobs Actions", "Étapes Actions", "Git", "Pull requests", "Déploiements", "Issues", "Versions", "Activité GitHub"].map((x) => h("option", { value: x }, x)));
+  const level = h("select", { class: "fe-select", "aria-label": "Filtrer par niveau" }, ["Tous les niveaux", "Erreur", "Avertissement", "Succès", "Information"].map((x) => h("option", { value: x }, x)));
+  const period = h("select", { class: "fe-select", "aria-label": "Période" }, [
+    h("option", { value: "1" }, "Dernières 24 heures"),
+    h("option", { value: "7" }, "7 derniers jours"),
+    h("option", { value: "30", selected: true }, "30 derniers jours"),
+    h("option", { value: "90" }, "90 derniers jours"),
+    h("option", { value: "365" }, "12 derniers mois"),
+    h("option", { value: "all" }, "Toute la période")
+  ]);
+  const branches = [...new Set(events.map((e) => e.branch).filter(Boolean))].sort();
+  const branch = h("select", { class: "fe-select", "aria-label": "Branche" }, ["Toutes les branches", ...branches].map((x) => h("option", { value: x }, x)));
+  const status = h("select", { class: "fe-select", "aria-label": "État" }, ["Tous les états", "success", "failure", "cancelled", "in_progress", "queued", "open", "closed", "merged", "pending", "error"].map((x) => h("option", { value: x }, x === "Tous les états" ? x : x.replace("_", " "))));
+  const summary = h("div", { class: "fe-log-summary" });
+  const list = h("div", { class: "fe-log-list", role: "list", "aria-label": "Événements du journal" });
+  const detail = h("aside", { class: "fe-log-detail", "aria-live": "polite" });
+  const countText = h("span", { class: "fe-meta" }, "Chargement des événements…");
+  const toggle = h("button", { type: "button", class: "fe-btn", onclick: () => { S.live = !S.live; render(S.cur); } }, ic("radio-tower"), S.live ? "Direct activé" : "Activer le direct");
+  const filtered = () => {
+    const now = Date.now(), daysBack = state.period === "all" ? Infinity : Number(state.period);
+    return events.filter((e) => {
+      const age = (now - new Date(e.t).getTime()) / 86400000;
+      const levelName = e.lvl === "error" ? "Erreur" : e.lvl === "warn" ? "Avertissement" : e.lvl === "ok" ? "Succès" : "Information";
+      const text = [e.m, e.details, e.actor, e.branch, e.sha, e.k, e.status, e.source].join(" ").toLowerCase();
+      return (!state.q || text.includes(state.q.toLowerCase()))
+        && (state.source === "Toutes les sources" || e.source === state.source)
+        && (state.level === "Tous les niveaux" || levelName === state.level)
+        && (state.period === "all" || age <= daysBack)
+        && (state.branch === "Toutes les branches" || e.branch === state.branch)
+        && (state.status === "Tous les états" || e.status === state.status);
+    });
+  };
+  const openDetail = (e) => {
+    state.selected = e.id;
+    detail.replaceChildren(
+      h("div", { class: "fe-log-detail-head" }, h("span", { class: "fe-meta" }, "DÉTAIL DE L'ÉVÉNEMENT"), btn("Fermer", "x", () => { state.selected = null; detail.hidden = true; list.classList.remove("has-detail"); })),
+      h("h3", {}, e.m),
+      h("div", { class: "fe-log-detail-meta" }, h("span", { class: "fe-log-badge " + e.lvl }, e.lvl === "error" ? "Erreur" : e.lvl === "warn" ? "Avertissement" : e.lvl === "ok" ? "Succès" : "Information"), h("span", { class: "fe-meta" }, e.source), h("span", { class: "fe-meta" }, new Date(e.t).toLocaleString("fr-FR"))),
+      h("div", { class: "fe-log-detail-fields" },
+        ...[["Acteur", e.actor], ["Branche", e.branch || "—"], ["Commit", e.sha ? e.sha.slice(0, 12) : "—"], ["État", e.status || "—"], ["Identifiant", e.id]].map(([k, v]) => h("div", { class: "fe-kv" }, h("span", {}, k), h("b", {}, v)))),
+      h("pre", { class: "fe-log-detail-pre" }, e.details || e.m),
+      h("div", { class: "fe-bar" }, h("a", { class: "fe-btn primary", href: e.url || repoUrl, target: "_blank", rel: "noopener noreferrer" }, ic("external-link"), "Ouvrir sur GitHub"), btn("Copier les détails", "copy", () => navigator.clipboard.writeText((e.m + "\n" + e.details).trim()).then(() => toast("Détails copiés")).catch(() => toast("Copie impossible", true))))
+    );
+    detail.hidden = false;
+    list.classList.add("has-detail");
+    icons();
+  };
+  const draw = () => {
+    const shown = filtered();
+    summary.replaceChildren(
+      ...[
+        ["Événements", String(events.length), "layers"],
+        ["Erreurs", String(count.errors), "alert-triangle"],
+        ["Échecs de workflow", String(count.failed), "x-circle"],
+        ["En cours", String(count.running), "loader-circle"]
+      ].map(([label, value, icon]) => h("div", { class: "fe-log-stat" }, h("span", { class: "fe-log-stat-icon" }, ic(icon)), h("div", {}, h("span", { class: "fe-meta" }, label), h("b", {}, value)))
+    );
+    countText.textContent = `${shown.length} événement(s) affiché(s) sur ${events.length} · ${runList.length} exécution(s) Actions chargée(s)`;
+    list.replaceChildren();
+    if (!shown.length) {
+      list.append(empt("search-x", "Aucun événement trouvé", "Modifie les filtres ou élargis la période."));
+    } else {
+      shown.slice(0, 300).forEach((e) => {
+        const levelName = e.lvl === "error" ? "Erreur" : e.lvl === "warn" ? "Avertissement" : e.lvl === "ok" ? "Succès" : "Info";
+        const row = h("button", { type: "button", class: "fe-log-row " + e.lvl + (state.selected === e.id ? " selected" : ""), role: "listitem", onclick: () => openDetail(e), "aria-label": e.m });
+        row.append(
+          h("span", { class: "fe-log-time" }, new Date(e.t).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" })),
+          h("span", { class: "fe-log-badge " + e.lvl }, levelName),
+          h("span", { class: "fe-log-source" }, e.source || e.k),
+          h("span", { class: "fe-log-message" }, h("b", {}, e.m), h("small", {}, [e.branch && "branche " + e.branch, e.actor && "par " + e.actor, e.sha && e.sha.slice(0, 7)].filter(Boolean).join(" · "))),
+          ic("chevron-right")
+        );
+        list.append(row);
+      });
+      if (shown.length > 300) list.append(h("p", { class: "fe-meta fe-log-limit" }, "Les 300 premiers résultats sont affichés. Affine les filtres pour consulter les événements suivants."));
+    }
+    icons();
+  };
+  [search, source, level, period, branch, status].forEach((el) => el.addEventListener("input", () => {
+    state.q = search.value.trim();
+    state.source = source.value;
+    state.level = level.value;
+    state.period = period.value;
+    state.branch = branch.value;
+    state.status = status.value;
+    draw();
+  }));
+  const filters = h("div", { class: "fe-log-toolbar" }, search, source, level, period, branch, status);
+  const reset = btn("Réinitialiser", "rotate-ccw", () => {
+    search.value = ""; source.value = "Toutes les sources"; level.value = "Tous les niveaux";
+    period.value = "30"; branch.value = "Toutes les branches"; status.value = "Tous les états";
+    Object.assign(state, { q: "", source: source.value, level: level.value, period: "30", branch: branch.value, status: status.value });
+    draw();
+  });
+  const download = (format) => {
+    const shown = filtered();
+    const payload = format === "json" ? JSON.stringify(shown, null, 2) :
+      [["date", "niveau", "source", "etat", "branche", "auteur", "message", "details", "url"], ...shown.map((e) => [e.t, e.lvl, e.source, e.status, e.branch, e.actor, e.m, e.details, e.url])]
+        .map((row) => row.map((v) => '"' + String(v ?? "").replace(/"/g, '""').replace(/\r?\n/g, " ") + '"').join(",")).join("\r\n");
+    const blob = new Blob([payload], { type: format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob), a = h("a", { href: url, download: `deploy-journaux-${new Date().toISOString().slice(0, 10)}.${format === "json" ? "json" : "csv"}` });
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const top = h("div", { class: "fe-log-top" },
+    h("div", {}, h("h2", {}, "Centre des journaux"), h("p", { class: "fe-meta" }, `${repo} · activité GitHub, workflows, jobs, étapes et déploiements`)),
+    h("div", { class: "fe-log-actions" }, toggle, btn("Actualiser", "refresh-cw", () => render(S.cur)), btn("CSV", "file-spreadsheet", () => download("csv")), btn("JSON", "file-json", () => download("json"))));
+  const filtersHead = h("div", { class: "fe-log-results-head" }, h("b", {}, "Événements"), countText, reset);
+  root.append(top, summary, h("div", { class: "fe-log-explainer" }, ic("info"), h("span", {}, "Les journaux regroupent les événements fournis par l’API GitHub. Les détails de console complets d’un workflow restent accessibles depuis « Ouvrir sur GitHub ».")), filters, filtersHead, h("div", { class: "fe-log-workspace" }, list, detail));
+  detail.hidden = true;
   draw();
-  if (S.live) S.timer = setTimeout(() => render(S.cur), 8000);
+  if (S.live) S.timer = setTimeout(() => { if (S.cur) render(S.cur); }, 30000);
 }
 function area(labels, data) {
   const W = 1100, H = 260, pl = 34, pb = 22, pt = 10, n = data.length, max = Math.max(1, ...data), x = (i) => pl + ((W - pl - 8) * i) / Math.max(1, n - 1), y = (v) => pt + (H - pt - pb) * (1 - v / max);
