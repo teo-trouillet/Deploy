@@ -14,6 +14,7 @@ Un tableau de bord à la Vercel pour **déployer et gérer tes sites GitHub Page
 
 - **Thème** automatique / clair / sombre (bouton en bas à droite), **palette de commandes** (Ctrl/Cmd + K), **routage par hash** (`#deploiements`, `#fichiers`…)
 - **Build automatique** : si le projet a un `package.json`, le workflow installe, lance `npm run build` et publie `dist/`, `build/`, `out/`, `public/` ou `_site/`. Réglable avec les variables Actions `BUILD_COMMAND` et `OUTPUT_DIR` (page *Variables d'environnement*). Pour un projet existant, clique « Déploiement auto » pour réinstaller le workflow. Les previews de PR sont servies sous `/pr-preview/pr-N/` : configure la `base` de ton framework si besoin.
+- **Général** : renommer le projet, modifier sa description ; **Domaines** : désactiver Pages ; modèles *Lien en bio* et *En construction* ; actions dans la palette de commandes ; `.nojekyll` ajouté au build (dossiers `_next`, `_astro`…)
 - Onboarding au premier lancement, squelettes de chargement, erreurs GitHub traduites
 
 ## Hébergement : GitHub Pages d'abord
@@ -35,7 +36,7 @@ Pour publier l'app : Réglages › Pages › Source = **GitHub Actions**, le wor
 
 - Crée une OAuth App (callback `BASE_URL/auth/callback`) et renseigne `.env` (voir `.env.example`), puis `npm install`.
 - Alertes : webhook sur le dépôt (événement *Workflow runs*, URL `BASE_URL/webhook/github`, secret = `WEBHOOK_SECRET`) et `NOTIFY_WEBHOOK_URL`.
-- Sessions en mémoire ; mets HTTPS devant. `npm test` lance les tests (Node ≥ 20).
+- Sessions en mémoire ; mets HTTPS devant. `npm test` lance les tests (Node ≥ 20). `GET /healthz` sert de sonde de santé ; les sessions expirent après 8 h.
 
 ## Lancer en local
 
@@ -55,13 +56,19 @@ Le token est stocké dans le `localStorage` du navigateur et n'est envoyé qu'à
 ## Structure
 
 ```
-index.html        page unique
-css/shell.css     coque (navbar, header, animations)
-css/views.css     vues fonctionnelles (cartes, listes, graphiques)
-js/shell.js       intro, navbar, routage des pages
-js/app.js         client GitHub, état, vues principales
-js/project.js     sélecteur de projet, aperçu, fichiers, releases, logs…
+index.html            page unique (l'app)
+landing.html          page de présentation
+css/shell.css         coque (navbar, header, animations)
+css/views.css         vues fonctionnelles (cartes, listes, graphiques)
+js/shell.js           intro, navbar, routage, palette de commandes
+js/app.js             client GitHub, état, vues principales
+js/project.js         sélecteur de projet, aperçu, fichiers, releases, logs…
+server/server.js      backend optionnel (OAuth, proxy, secrets, DNS, webhook)
+test/server.test.js   tests (npm test)
+.github/workflows/    ci.yml (tests) et pages.yml (publie l'app sur GitHub Pages)
 ```
+
+> Le workflow `deploy.yml` n'est **pas** dans ce dépôt : c'est le modèle que Deploy installe dans *tes projets* (voir `WF` dans `js/app.js`).
 
 ## Limites connues
 

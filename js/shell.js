@@ -13,7 +13,7 @@ window.setTimeout(() => {
     }, seenIntro ? 0 : 800);
 }, seenIntro ? 0 : 1200);
 
-lucide.createIcons();
+window.lucide?.createIcons();
 window.setTimeout(() => showPage(fromHash() || "Projets"), seenIntro ? 0 : 1300);
 
 function setCollapsed(collapsed) {
@@ -238,6 +238,8 @@ function openPalette() {
     const input = D.h("input", { class: "fe-input", placeholder: "Aller à une page ou un projet…", "aria-label": "Palette de commandes" });
     const list = D.h("div", { class: "pop-list" });
     let items = [...document.querySelectorAll(".nav-item span")].map((s) => { const l = s.textContent.trim(); return { t: l, i: "corner-down-right", run: () => D.go(l) }; });
+    items.push({ t: "Action : nouveau projet", i: "plus", run: () => window.Deploy.action("new") }, { t: "Action : déployer le projet", i: "rocket", run: () => window.Deploy.action("deploy") },
+        { t: "Action : rafraîchir", i: "refresh-cw", run: () => window.Deploy.action("refresh") }, { t: "Action : changer de thème", i: "sun-moon", run: () => document.getElementById("theme-toggle").click() });
     const draw = () => {
         const q = input.value.toLowerCase(), rows = items.filter((x) => x.t.toLowerCase().includes(q)).slice(0, 12);
         list.replaceChildren(...rows.map((x, k) => D.h("button", { type: "button", class: "pop-item" + (k === 0 ? " active" : ""), onclick: () => { close(); x.run(); } }, D.ic(x.i), D.h("span", {}, x.t))));
@@ -247,10 +249,13 @@ function openPalette() {
     document.body.appendChild(o); draw(); input.focus();
     input.addEventListener("input", draw);
     input.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); if (e.key === "Enter") list.querySelector(".pop-item")?.click(); });
-    if (D.LS("fe_token")) D.repos().then((rs) => { items = items.concat(rs.map((r) => ({ t: r.full_name, i: "folder-git-2", run: () => D.setProject(r.full_name) }))); draw(); }).catch(() => {});
+    if (D.LS("fe_token") || D.S.proxy) D.repos().then((rs) => { items = items.concat(rs.map((r) => ({ t: r.full_name, i: "folder-git-2", run: () => D.setProject(r.full_name) }))); draw(); }).catch(() => {});
 }
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); } });
 
 // Mobile : la navbar devient un tiroir.
 document.querySelector(".mobile-menu")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
 document.querySelectorAll(".nav-item").forEach((i) => i.addEventListener("click", () => document.body.classList.remove("nav-open")));
+
+// Bouton du profil : ouvre la page de connexion GitHub.
+document.getElementById("user-settings")?.addEventListener("click", () => window.DP?.go("Git"));

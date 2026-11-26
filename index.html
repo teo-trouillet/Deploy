@@ -8,7 +8,9 @@
     <script>try{var t=localStorage.getItem("fe_theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
     <link rel="stylesheet" href="css/shell.css">
     <link rel="stylesheet" href="css/views.css">
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <meta name="theme-color" content="#111111">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23111%27/%3E%3Cpath d=%27M16 6l8 14H8z%27 fill=%27%23fff%27/%3E%3C/svg%3E">
+    <script src="https://unpkg.com/lucide@0.469.0"></script>
 </head>
 <body class="loading-screen">
     <section class="section nav">
@@ -157,8 +159,8 @@
                     <span class="user-name">Invité</span>
                     <span class="user-role">Non connecté</span>
                 </div>
-                <button type="button" class="user-settings" aria-label="Paramètres du profil">
-                    <i data-lucide="square-arrow-left-enter"></i>
+                <button type="button" class="user-settings" id="user-settings" aria-label="Compte GitHub" title="Compte GitHub">
+                    <i data-lucide="key-round"></i>
                 </button>
             </div>
         </footer>
@@ -174,7 +176,7 @@
                     <line x1="14.5" y1="14.5" x2="19" y2="19" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
                 </svg>
                 <span class="placeholder">Rechercher</span>
-                <input type="text" class="search-input" placeholder="Rechercher une tâche, un utilisateur..." aria-label="Rechercher une tâche ou un utilisateur"/>
+                <input type="text" class="search-input" placeholder="Rechercher un projet, un fichier, un déploiement…" aria-label="Rechercher dans la page"/>
             </div>
         </header>
 
@@ -199,7 +201,7 @@
 
     <script src="js/app.js"></script>
     <script src="js/project.js"></script>
-<script src="js/shell.js"></script>
+    <script src="js/shell.js"></script>
 
 </body>
 </html>

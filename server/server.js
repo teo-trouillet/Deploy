@@ -6,7 +6,8 @@ const E = process.env, ROOT = path.join(__dirname, '..');
 const SECRET = E.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const PAGES_IPS = ['185.199.108.153', '185.199.109.153', '185.199.110.153', '185.199.111.153'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
-const sessions = new Map();
+const sessions = new Map(), SESSION_TTL = 8 * 3600e3;
+if (!E.SESSION_SECRET) console.warn('SESSION_SECRET absent : les sessions seront perdues à chaque redémarrage (voir .env.example).');
 
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const sign = (v, s = SECRET) => v + '.' + crypto.createHmac('sha256', s).update(v).digest('base64url');
@@ -26,7 +27,7 @@ async function checkDns(domain, user, r = dns) {
 }
 const body = (req, max = 1e6) => new Promise((ok, ko) => { let d = ''; req.on('data', (c) => { d += c; if (d.length > max) { ko(new Error('trop gros')); req.destroy(); } }); req.on('end', () => ok(d)); req.on('error', ko); });
 const json = (res, code, o, h = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', ...h }); res.end(JSON.stringify(o)); };
-const session = (req) => sessions.get(unsign(cookies(req).sid));
+const session = (req) => { const id = unsign(cookies(req).sid), s = id && sessions.get(id); if (s && s.exp < Date.now()) { sessions.delete(id); return undefined; } return s || undefined; };
 const secure = () => (E.BASE_URL || '').startsWith('https') ? '; Secure' : '';
 const gh = (token, p, opt = {}) => fetch('https://api.github.com' + p, { ...opt, headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', Authorization: 'Bearer ' + token, ...(opt.body ? { 'Content-Type': 'application/json' } : {}) } });
 
@@ -52,10 +53,11 @@ function createServer() {
         const t = await (await fetch('https://github.com/login/oauth/access_token', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: E.GITHUB_CLIENT_ID, client_secret: E.GITHUB_CLIENT_SECRET, code: url.searchParams.get('code') }) })).json();
         if (!t.access_token) return json(res, 400, { error: 'échange OAuth refusé' });
         const u = await (await gh(t.access_token, '/user')).json(), sid = crypto.randomBytes(24).toString('hex');
-        sessions.set(sid, { token: t.access_token, login: u.login });
+        sessions.set(sid, { token: t.access_token, login: u.login, exp: Date.now() + SESSION_TTL });
         res.writeHead(302, { 'Set-Cookie': `sid=${sign(sid)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${secure()}`, Location: '/' });
         return res.end();
       }
+      if (p === '/healthz') return json(res, 200, { ok: true });
       if (p === '/api/me') return s ? json(res, 200, { login: s.login, backend: true }) : json(res, 401, { backend: true, oauth: !!E.GITHUB_CLIENT_ID });
       // Routes d'écriture : en-tête personnalisé obligatoire (protection CSRF).
       if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'deploy' && p !== '/webhook/github') return json(res, 403, { error: 'en-tête manquant' });
@@ -90,7 +92,7 @@ function createServer() {
       const rel = decodeURIComponent(p === '/' ? '/index.html' : p), top = rel.split('/')[1] || '';
       const file = path.join(ROOT, rel);
       if (!file.startsWith(ROOT + path.sep) || ['server', 'test', 'node_modules'].includes(top) || top.startsWith('.') || /^package|^\.env/.test(top) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'introuvable' });
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' });
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' });
       fs.createReadStream(file).pipe(res);
     } catch (e) { json(res, 500, { error: 'Erreur serveur' }); }
   });

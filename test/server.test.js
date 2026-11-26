@@ -1,4 +1,4 @@
-const test = require('node:test'), assert = require('node:assert'), crypto = require('node:crypto');
+const test = require('node:test'), assert = require('node:assert'), crypto = require('node:crypto'), fs = require('node:fs'), path = require('node:path');
 const { createServer, sign, unsign, verifySig, notifyBody, checkDns } = require('../server/server.js');
 
 test('cookies signés : altération détectée', () => {
@@ -31,5 +31,23 @@ test('HTTP : auth, CSRF, fichiers internes protégés', async () => {
     assert.strictEqual((await fetch(b + '/server/server.js')).status, 404);
     assert.strictEqual((await fetch(b + '/js/../package.json')).status, 404);
     assert.strictEqual((await fetch(b + '/')).status, 200);
+    assert.strictEqual((await fetch(b + '/healthz')).status, 200);
+    assert.strictEqual((await fetch(b + '/.env.example')).status, 404);
+    assert.strictEqual((await fetch(b + '/.github/workflows/ci.yml')).status, 404);
   } finally { srv.close(); }
+});
+
+test('index.html : chaque CSS/JS local référencé existe et est servi', async () => {
+  const root = path.join(__dirname, '..'), html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const refs = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"]+)"/g)].map((m) => m[1]);
+  assert.ok(refs.length >= 5, 'au moins 2 CSS et 3 JS attendus');
+  const srv = createServer().listen(0), b = 'http://127.0.0.1:' + srv.address().port;
+  try {
+    for (const r of refs) { assert.ok(fs.existsSync(path.join(root, r)), 'fichier manquant : ' + r); assert.strictEqual((await fetch(b + '/' + r)).status, 200, r); }
+  } finally { srv.close(); }
+});
+test('index.html : lucide épinglé et icône inexistante retirée', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  assert.ok(!html.includes('lucide@latest'), 'lucide doit être épinglé');
+  assert.ok(!html.includes('square-arrow-left-enter'));
 });

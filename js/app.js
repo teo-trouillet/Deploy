@@ -11,6 +11,8 @@ const TEMPLATES = {
   "Page simple": (n) => `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><title>${n}</title><body style="font-family:sans-serif;text-align:center;padding:4rem"><h1>${n}</h1><p>Déployé avec Deploy.</p></body></html>`,
   "Portfolio": (n) => `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${n}</title><style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:0 auto;padding:3rem 1.2rem;line-height:1.6}h1{margin:0}.p{border:1px solid #ddd;border-radius:12px;padding:1rem;margin:1rem 0}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}.p{border-color:#333}}</style><h1>${n}</h1><p>Développeur web · À propos de moi en deux phrases.</p><h2>Projets</h2><div class="p"><b>Projet 1</b><p>Description courte.</p></div><div class="p"><b>Projet 2</b><p>Description courte.</p></div><h2>Contact</h2><p>vous@exemple.fr</p>`,
 };
+TEMPLATES["Lien en bio"] = (n) => `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${n}</title><style>body{font-family:system-ui,sans-serif;max-width:26rem;margin:0 auto;padding:3rem 1.2rem;text-align:center}a{display:block;border:1px solid #ccc;border-radius:12px;padding:.9rem;margin:.7rem 0;color:inherit;text-decoration:none;font-weight:600}a:hover{background:#8881}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}a{border-color:#333}}</style><h1>${n}</h1><p>Mes liens</p><a href="#">Mon site</a><a href="#">Mon profil</a><a href="#">Me contacter</a>`;
+TEMPLATES["En construction"] = (n) => `<!DOCTYPE html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${n}</title><style>body{min-height:100vh;margin:0;display:grid;place-items:center;font-family:system-ui,sans-serif;text-align:center}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}}</style><main><h1>${n}</h1><p>Bientôt en ligne.</p></main>`;
 const h = (t, a = {}, ...c) => {
   const e = document.createElement(t);
   for (const [k, v] of Object.entries(a)) {
@@ -123,6 +125,7 @@ const WF = [
   "            elif grep -q '\"build\"' package.json; then npm run build; fi",
   "            if [ -z \"$DIR\" ]; then for d in dist build out public _site; do [ -d \"$d\" ] && DIR=\"$d\" && break; done; fi",
   "          fi",
+  "          touch \"${DIR:-.}/.nojekyll\"",
   "          echo \"dir=${DIR:-.}\" >> \"$GITHUB_OUTPUT\"",
   "      - name: Production",
   "        if: github.event_name != 'pull_request'",
@@ -176,7 +179,7 @@ function setProfile(u) {
 
 async function deploy(repo, ref) {
   const w = await gh(`/repos/${repo}/actions/workflows`);
-  const wf = w.workflows.find((x) => x.state === "active");
+  const wf = w.workflows.find((x) => x.state === "active" && x.path === ".github/workflows/deploy.yml") || w.workflows.find((x) => x.state === "active");
   if (wf) {
     try { await gh(`/repos/${repo}/actions/workflows/${wf.id}/dispatches`, { method: "POST", body: { ref: ref || (await gh(`/repos/${repo}`)).default_branch } }); return toast("Déploiement lancé : " + wf.name); } catch (e) { /* pas de workflow_dispatch */ }
   }
@@ -328,7 +331,8 @@ async function vDomains(root) {
   root.append(h("div", { class: "fe-card" },
     h("div", {}, h("b", {}, "URL : "), h("a", { href: p.html_url, target: "_blank", rel: "noopener" }, p.html_url), ` · statut ${p.status || "—"}`),
     h("div", { class: "fe-bar", style: "margin:0" }, cname, btn("Enregistrer le domaine", "link-2", () => act(() => gh(`/repos/${repo}/pages`, { method: "PUT", body: { cname: cname.value.trim() || null } }), "Domaine enregistré (pense au CNAME DNS)"), "primary"),
-      btn(p.https_enforced ? "HTTPS forcé ✓" : "Forcer HTTPS", "lock", () => act(() => gh(`/repos/${repo}/pages`, { method: "PUT", body: { https_enforced: true } }), "HTTPS forcé")))));
+      btn(p.https_enforced ? "HTTPS forcé ✓" : "Forcer HTTPS", "lock", () => act(() => gh(`/repos/${repo}/pages`, { method: "PUT", body: { https_enforced: true } }), "HTTPS forcé")),
+      btn("Désactiver Pages", "power", () => confirm("Désactiver GitHub Pages pour ce projet ? Le site ne sera plus en ligne.") && act(async () => { await gh(`/repos/${repo}/pages`, { method: "DELETE" }); render(S.cur); }, "Pages désactivé"), "danger"))));
 }
 
 let sodiumP;
@@ -347,6 +351,7 @@ function secretsCard(repo) {
   return h("div", { class: "fe-card" }, h("b", {}, "Secrets"), h("span", { class: "fe-meta" }, "Chiffrés dans ton navigateur (libsodium) avant envoi à GitHub ; illisibles ensuite. Utilisables dans les workflows via ${{ secrets.NOM }}."),
     h("div", { class: "fe-bar", style: "margin:0" }, n, v, btn("Enregistrer le secret", "lock", () => act(async () => {
       if (!/^[A-Z_][A-Z0-9_]*$/.test(n.value.trim()) || !v.value) throw new Error("Nom en MAJUSCULES_ET_TIRETS_BAS et valeur requis.");
+      if (/^GITHUB_/.test(n.value.trim())) throw new Error("Les noms de secrets ne peuvent pas commencer par GITHUB_.");
       await sealSecret(repo, n.value.trim(), v.value); v.value = "";
     }, "Secret enregistré"), "primary")));
 }
@@ -370,6 +375,7 @@ async function vVars(root) {
   const n = h("input", { class: "fe-input", placeholder: "NOM" }), v = h("input", { class: "fe-input", placeholder: "valeur" });
   root.append(h("div", { class: "fe-card" }, h("div", { class: "fe-bar", style: "margin:0" }, n, v, btn("Ajouter / mettre à jour", "plus", () => act(async () => {
     const body = { name: n.value.trim(), value: v.value };
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(body.name) || /^GITHUB_/i.test(body.name)) throw new Error("Nom invalide (lettres, chiffres, _ ; sans préfixe GITHUB_).");
     try { await gh(`/repos/${repo}/actions/variables`, { method: "POST", body }); } catch { await gh(`/repos/${repo}/actions/variables/${body.name}`, { method: "PATCH", body }); }
     render(S.cur);
   }, "Variable enregistrée"), "primary")), h("div", { class: "fe-meta" }, "Variables Actions (non secrètes). Spéciales : BUILD_COMMAND (ex. npm run build) et OUTPUT_DIR (ex. dist) règlent le build du déploiement ; sans elles, Deploy détecte package.json et le dossier dist/build/out.")),
