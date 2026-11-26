@@ -9,10 +9,10 @@
   "scripts": {
     "start": "node server/server.js",
     "test": "node --test",
-    "check": "node --check js/app.js && node --check js/project.js && node --check js/overview.js && node --check js/shell.js && node --check server/server.js"
+    "check": "node --check js/app.js && node --check js/project.js && node --check js/overview.js && node --check js/search.js && node --check js/shell.js && node --check server/server.js"
   },
   "dependencies": {
     "libsodium-wrappers": "^0.7.13"
   },
-  "description": "Tableau de bord pour déployer et gérer des sites GitHub Pagesx"
+  "description": "Tableau de bord pour déployer et gérer des sites GitHub Pages"
 }
