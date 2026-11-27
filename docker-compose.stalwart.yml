@@ -1,0 +1,22 @@
+version: "3.8"
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:latest
+    container_name: deploy-stalwart
+    restart: unless-stopped
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "143:143"
+      - "993:993"
+      - "4190:4190"
+      - "8080:8080"
+      - "443:443"
+    volumes:
+      - stalwart-data:/opt/stalwart
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+    # Configure the admin account and TLS in Stalwart before exposing publicly.
+volumes:
+  stalwart-data:
