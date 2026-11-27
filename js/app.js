@@ -257,50 +257,6 @@ async function vConnect(root) {
   input.addEventListener("keydown", (e) => e.key === "Enter" && connect());
 }
 
-async function vProjects(root) {
-  const form = newProjectForm(root); form.removeAttribute("hidden"); form.classList.add("fe-hero"); const grid = h("div", { class: "fe-cards" }), side = h("div", { class: "fe-side" });
-  root.append(form, h("div", { class: "fe-split" }, side, h("div", {}, h("div", { class: "fe-sec" }, "Projets"), grid)));
-  const all = await repos(), rs = all.filter((r) => match(r.full_name, r.description)), dots = {}, msgs = {};
-  const alerts = h("div", { class: "fe-meta" }, "Vérification…");
-  side.append(h("div", { class: "fe-sec" }, "Utilisation"), h("div", { class: "fe-card" }, [["Projets", all.length], ["Pages actif", all.filter((r) => r.has_pages).length], ["Privés", all.filter((r) => r.private).length]].map(([k, v]) => h("div", { class: "fe-kv" }, h("span", {}, k), h("b", {}, String(v))))),
-    h("div", { class: "fe-sec" }, "Alertes"), h("div", { class: "fe-card fe-center" }, ic("bell"), alerts),
-    h("div", { class: "fe-sec" }, "Projets récents"), h("div", { class: "fe-list" }, all.slice(0, 3).map((r) => h("div", { class: "fe-row fe-click", onclick: () => window.DP.setProject(r.full_name) }, ic("folder-git-2"), h("div", { class: "fe-main" }, h("b", {}, r.name), h("span", { class: "fe-meta" }, "push " + ago(r.pushed_at)))))));
-  grid.append(...rs.map((r) => h("div", { class: "fe-proj", tabindex: "0", onclick: () => window.DP.setProject(r.full_name), onkeydown: (e) => e.key === "Enter" && window.DP.setProject(r.full_name) },
-    h("div", { class: "fe-phead" }, h("span", { class: "fe-avatar" }, r.name[0].toUpperCase()), h("div", { class: "fe-main" }, h("b", {}, r.name), h("span", { class: "fe-meta" }, r.has_pages ? `${r.owner.login}.github.io/${r.name}` : "Pas de déploiement")), (dots[r.full_name] = h("span", { class: "fe-dot " + (r.has_pages ? "ok" : "") }))),
-    (msgs[r.full_name] = h("div", { class: "fe-pmsg" }, ic("git-commit-horizontal"), r.description || "—")),
-    h("div", { class: "fe-badges" }, h("span", { class: "fe-badge" }, r.private ? "Privé" : "Public"), r.language && h("span", { class: "fe-badge" }, r.language), r.has_pages && h("span", { class: "fe-badge ok" }, "Pages")),
-    h("div", { class: "fe-meta fe-pfoot" }, ic("git-branch"), `${r.full_name} · ${ago(r.pushed_at)}`))));
-  if (!rs.length) grid.append(h("div", { class: "fe-empty" }, "Aucun projet."));
-  icons();
-  let fails = 0;
-  await Promise.all(rs.slice(0, 12).map((r) => gh(`/repos/${r.full_name}/actions/runs?per_page=1`).then((d) => {
-    const x = d.workflow_runs[0]; if (!x) return;
-    dots[r.full_name].className = "fe-dot " + dotOf(x); msgs[r.full_name].lastChild.textContent = x.display_title; if (x.conclusion === "failure") fails++;
-  }).catch(() => {})));
-  alerts.textContent = fails ? `${fails} projet(s) avec un dernier déploiement en échec.` : "Aucune alerte.";
-}
-
-function newProjectForm() {
-  const name = h("input", { class: "fe-input", placeholder: "nom-du-site" }), tpl = h("select", { class: "fe-select", "aria-label": "Modèle" }, Object.keys(TEMPLATES).map((k) => h("option", {}, k)));
-  return h("div", { class: "fe-card", hidden: true, id: "fe-new" }, h("b", { class: "fe-herotitle" }, "Crée ton prochain projet"), h("div", { class: "fe-meta" }, "Un nom, un clic : dépôt GitHub, page d'accueil, déploiement auto, previews par PR et GitHub Pages."),
-    h("div", { class: "fe-bar", style: "margin:0" }, name, tpl, btn("Créer et déployer", "rocket", () => act(async () => {
-      const n = name.value.trim(); if (!/^[\w.-]+$/.test(n)) throw new Error("Nom invalide (lettres, chiffres, - _ .).");
-      const L = loading("Création de " + n);
-      try {
-        L.step("Création du dépôt GitHub");
-        const repo = await gh("/user/repos", { method: "POST", body: { name: n, auto_init: true, description: "Créé avec Deploy" } });
-        await new Promise((r) => setTimeout(r, 1500));
-        L.step("Ajout de la page d'accueil");
-        const html = TEMPLATES[tpl.value](n);
-        await gh(`/repos/${repo.full_name}/contents/index.html`, { method: "PUT", body: { message: "Initial deploy", content: toB64(html), branch: repo.default_branch } });
-        await setupAuto(repo.full_name, L);
-        L.step("Site en ligne"); L.done();
-        S.repos = null;
-        await new Promise((r) => setTimeout(r, 700)); L.close(); window.DP.setProject(repo.full_name, "Déploiements");
-      } catch (e) { L.close(); throw e; }
-    }), "primary")));
-}
-
 const seen = {};
 function watchFailures(repo, runs) {
   for (const r of runs) {
@@ -464,7 +420,7 @@ async function vVars(root) {
 const PROJ = ["Aperçu", "Déploiements", "Journaux", "Fichiers", "Domaines", "Variables d'environnement", "Statistiques", "Général", "Environnements", "Publications", "Tags", "Changelog", "Comparer", "Support"];
 const info = (t) => async (root) => root.append(h("div", { class: "fe-card" }, t));
 const VIEWS = {
-  "Projets": vProjects, "Déploiements": (r) => vRuns(r), "Activité": vActivity,
+  "Déploiements": (r) => vRuns(r), "Activité": vActivity,
   "Domaines": vDomains, "Variables d'environnement": vVars, "Git": vConnect,
   "Sécurité": info("Par défaut ton token reste dans la session du navigateur (effacé à la fermeture) ; « Rester connecté » le garde dans le localStorage. Il n'est envoyé qu'à api.github.com. Utilise un token à durée limitée et révoque-le sur GitHub si besoin."),
   "Support": info("1) Paramètres › Git : colle ton token. 2) Projets › Nouveau projet pour créer et déployer un site. 3) Déploiements : journaux, relance, restauration."),
@@ -502,7 +458,7 @@ window.Deploy = {
   render: (label, root) => {
     if (label === "Projets") { if (S.keep) S.keep = false; else S.proj = null; } root.querySelector("p")?.classList.add("fe-desc"); return render({ label, root }); },
   action: (a) => {
-    if (a === "new") { go("Projets"); setTimeout(() => { const f = document.getElementById("fe-new"); f?.removeAttribute("hidden"); f?.querySelector("input")?.focus(); }, 300); }
+    if (a === "new") { go("Projets"); setTimeout(() => { const f = document.getElementById("fe-new"); f?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 300); }
     if (a === "refresh") { S.repos = null; S.cur && render(S.cur); }
     if (a === "deploy") act(() => { if (!cur()) throw new Error("Choisis d'abord un projet."); return deploy(cur()); });
   },
@@ -521,5 +477,5 @@ const localLogin = () => LS("fe_token") && gh("/user").then(setProfile).catch(()
   if (r.ok) { S.proxy = true; return gh("/user").then(setProfile).then(() => S.cur && render(S.cur)); }
   return localLogin();
 })).catch(localLogin);
-window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, makeWF, render, go, toB64, fromB64, match, dotOf, repos, VIEWS, loading };
+window.DP = { h, ic, btn, gh, act, toast, ago, dur, S, SET, LS, cur, icons, deploy, setupAuto, makeWF, render, go, toB64, fromB64, match, dotOf, repos, VIEWS, loading, TEMPLATES, upsertVar };
 })();
