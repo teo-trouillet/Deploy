@@ -203,7 +203,7 @@ async function vProjects(root) {
     const x = d.workflow_runs[0]; if (!x) return;
     const c = cells[r.full_name]; c.dot.className = "fe-dot " + dotOf(x); c.lab.textContent = state(x); c.msg.textContent = x.display_title; if (x.conclusion === "failure") fails++;
   }).catch(() => {})));
-  alerts.textContent = fails ? `${fails} projet(s) avec un dernier déploiement en échec.` : "Aucune alerte.";
+  alerts.textContent = fails ? `${fails} projet avec un dernier déploiement en échec.` : "Aucune alerte.";
 }
 VIEWS["Projets"] = vProjects;
 })();
