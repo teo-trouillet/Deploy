@@ -184,7 +184,7 @@ function createServer() {
         if (p === '/api/mail/domains' && req.method === 'POST') {
           const d = await mailJsonBody(), domain = String(d.domain || '').trim().toLowerCase();
           if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) return json(res, 422, { error: 'Nom de domaine invalide.' });
-          const created = await jmap([['x:Domain/set', { create: { newDomain: { name: domain, aliases: {}, certificateManagement: { '@type': 'Manual' }, dnsManagement: { '@type': 'Manual' }, subAddressing: { '@type': 'Enabled' } } }, 'set']]);
+          const created = await jmap([['x:Domain/set', { create: { newDomain: { name: domain, aliases: {}, certificateManagement: { '@type': 'Manual' }, dnsManagement: { '@type': 'Manual' }, subAddressing: { '@type': 'Enabled' } } } }, 'set']]);
           const payload = created.result.methodResponses?.find(x => x[0] === 'x:Domain/set')?.[1];
           if (payload?.notCreated?.newDomain) return json(res, 502, { error: 'Stalwart a refusé la création du domaine.' });
           return json(res, 201, { domain: payload?.created?.newDomain || {} });
