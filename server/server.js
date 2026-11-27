@@ -135,12 +135,13 @@ function createServer() {
           const boxes = await jmap([['Mailbox/get', { accountId, ids: null }, 'mb']]);
           const mailboxList = boxes.result.methodResponses?.find(x => x[0] === 'Mailbox/get')?.[1]?.list || [];
           const drafts = mailboxList.find(m => m.role === 'drafts');
-          if (!drafts) return json(res, 502, { error: 'Aucun dossier Brouillons JMAP disponible pour ce compte.' });
+          const sentBox = mailboxList.find(m => m.role === 'sent');
+          if (!drafts || !sentBox) return json(res, 502, { error: 'Les dossiers Brouillons et Envoyés doivent exister dans ce compte JMAP.' });
           const imported = await jmap([['Email/import', { accountId, emails: { newEmail: { blobId: blob.blobId, mailboxIds: { [drafts.id]: true }, keywords: { '$draft': true } } } }, 'import']]);
           const importedPayload = imported.result.methodResponses?.find(x => x[0] === 'Email/import')?.[1];
           const emailId = importedPayload?.created?.newEmail?.id;
           if (!emailId) return json(res, 502, { error: 'Stalwart n’a pas importé le message : vérifiez les permissions JMAP.' });
-          const submitted = await jmap([['EmailSubmission/set', { accountId, create: { submission: { emailId, envelope: { mailFrom: { email: from }, rcptTo: [{ email: to }] } } } }, 'submit']]);
+          const submitted = await jmap([['EmailSubmission/set', { accountId, create: { submission: { emailId, envelope: { mailFrom: { email: from }, rcptTo: [{ email: to }] } } }, onSuccessUpdateEmail: { [emailId]: { mailboxIds: { [drafts.id]: null, [sentBox.id]: true }, keywords: { '$draft': null, '$seen': true } } } }, 'submit']]);
           const submitSet = submitted.result.methodResponses?.find(x => x[0] === 'EmailSubmission/set')?.[1];
           if (submitSet?.notCreated?.submission) return json(res, 502, { error: 'Stalwart n’a pas pu soumettre le message.' });
           return json(res, 201, { sent: true });
