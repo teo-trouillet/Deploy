@@ -1,41 +1,230 @@
-/* Deploy Mails — client JMAP/Stalwart. Toutes les données viennent du backend, aucun faux message. */
+/* Deploy Mails — Stalwart JMAP client; no mock messages or external webmail redirects. */
 (() => {
   const tabs = ["Réception", "Envoyés", "Boîtes mail", "Domaines", "Paramètres"];
-  const state = { tab: "Réception", messages: [], selected: null, accounts: [], error: "", loading: false };
-  const h = (tag, attrs={}, ...children) => { const n=document.createElement(tag); Object.entries(attrs).forEach(([k,v])=>{if(k==="class")n.className=v;else if(k==="text")n.textContent=v;else if(k.startsWith("on"))n.addEventListener(k.slice(2).toLowerCase(),v);else n.setAttribute(k,v)}); children.flat().forEach(c=>{if(c instanceof Node)n.append(c);else if(c!=null)n.append(document.createTextNode(String(c)))}); return n; };
-  const api = async (path, opts={}) => { const r=await fetch(path,{credentials:"same-origin",...opts,headers:{"X-Requested-With":"deploy","Content-Type":"application/json",...(opts.headers||{})}}); const d=await r.json().catch(()=>({})); if(!r.ok)throw Error(d.error||"Erreur serveur ("+r.status+")"); return d; };
-  const button=(label,fn,primary=false)=>h("button",{class:"fe-btn"+(primary?" primary":""),type:"button",onclick:fn},label);
-  const field=(label,name,placeholder,type="text")=>{const wrap=h("label",{class:"mail-field"},h("span",{},label));const input=h("input",{class:"fe-input",name,placeholder,type,required:"required"});wrap.append(input);return {wrap,input};};
-  function render() {
-    const root=document.querySelector(".content-body"); if(!root)return;
-    root.replaceChildren(); const page=h("section",{class:"page-view app-view mail-app"});
-    page.append(h("div",{class:"mail-heading"},h("div",{},h("h1",{},"Mails"),h("p",{},"Messagerie hébergée par Stalwart · envoi et réception réels")),button("Nouveau message",compose,true)));
-    const nav=h("div",{class:"mail-tabs","role":"tablist"});
-    tabs.forEach(t=>nav.append(h("button",{class:"mail-tab"+(state.tab===t?" active":""),role:"tab","aria-selected":String(state.tab===t),onclick:()=>{state.tab=t;state.selected=null;render();if(["Réception","Envoyés"].includes(t))loadMessages();}},t)));
-    page.append(nav); if(state.error)page.append(h("div",{class:"mail-error",role:"alert"},state.error));
-    if(state.tab==="Réception"||state.tab==="Envoyés") renderInbox(page);
-    else if(state.tab==="Boîtes mail") renderMailboxes(page);
-    else if(state.tab==="Domaines") renderDomains(page);
-    else renderSettings(page);
+  const slugs = { "Réception": "reception", "Envoyés": "envoyes", "Boîtes mail": "boites-mail", "Domaines": "domaines", "Paramètres": "parametres" };
+  const labels = Object.fromEntries(Object.entries(slugs).map(([label, slug]) => [slug, label]));
+  const state = { tab: "Réception", messages: [], selected: null, error: "", loading: false };
+  const el = (tag, attrs = {}, ...children) => {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      if (key === "class") node.className = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2).toLowerCase(), value);
+      else node.setAttribute(key, value);
+    }
+    for (const child of children.flat()) {
+      if (child instanceof Node) node.append(child);
+      else if (child !== null && child !== undefined) node.append(document.createTextNode(String(child)));
+    }
+    return node;
+  };
+  const button = (text, fn, primary = false) => el("button", { type: "button", class: "fe-btn" + (primary ? " primary" : ""), onclick: fn }, text);
+  async function api(path, options = {}) {
+    const response = await fetch(path, {
+      credentials: "same-origin", ...options,
+      headers: { "X-Requested-With": "deploy", "Content-Type": "application/json", ...(options.headers || {}) }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Erreur serveur (" + response.status + ")");
+    return data;
+  }
+  function injectNav() {
+    const nav = document.querySelector(".nav-group-first");
+    if (!nav || document.getElementById("nav-mails")) return;
+    const main = el("div", { class: "nav-group-first", id: "nav-mails" });
+    main.append(el("a", { href: "#mails", class: "nav-item" }, el("i", { "data-lucide": "mail" }), el("span", {}, "Mails")));
+    const group = el("div", { class: "nav-group", id: "mail-subnav" });
+    const toggle = el("button", { type: "button", class: "nav-group-title", "aria-expanded": "false", "aria-controls": "nav-mails-items" },
+      el("i", { "data-lucide": "mail" }), el("span", {}, "Messagerie"), el("i", { "data-lucide": "chevron-right", class: "group-chevron" }));
+    const panel = el("div", { class: "nav-group-items", id: "nav-mails-items", "aria-hidden": "true", inert: "" });
+    const inner = el("div", { class: "nav-group-items-inner" });
+    tabs.forEach(label => inner.append(el("a", { href: "#mail-" + slugs[label], class: "nav-item nav-item-left" }, el("span", {}, label))));
+    panel.append(inner); group.append(toggle, panel); nav.after(main, group);
+    toggle.addEventListener("click", () => {
+      const open = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(open)); panel.setAttribute("aria-hidden", String(!open));
+      panel.inert = !open; panel.style.visibility = open ? "visible" : "hidden";
+      panel.style.height = open ? panel.scrollHeight + "px" : "0px"; group.classList.toggle("is-open", open);
+    });
+    window.lucide?.createIcons();
+  }
+  function show() {
+    const title = document.getElementById("content-title");
+    const root = document.querySelector(".content-body");
+    if (!root || !title) return;
+    title.textContent = "/ Mails";
+    document.querySelectorAll(".nav-item").forEach(item => {
+      const href = item.getAttribute("href") || "";
+      item.classList.toggle("active", href === "#mails" || href === "#mail-" + slugs[state.tab]);
+    });
+    root.replaceChildren();
+    const page = el("section", { class: "page-view app-view mail-app" });
+    const heading = el("div", { class: "mail-heading" },
+      el("div", {}, el("h1", {}, "Mails"), el("p", {}, "Messagerie hébergée par Stalwart · messages réels")),
+      button("Nouveau message", () => compose(), true));
+    page.append(heading);
+    const tabbar = el("div", { class: "mail-tabs", role: "tablist" });
+    tabs.forEach(label => tabbar.append(el("button", {
+      type: "button", role: "tab", class: "mail-tab" + (state.tab === label ? " active" : ""),
+      "aria-selected": String(state.tab === label), onclick: () => { state.tab = label; state.selected = null; show(); if (label === "Réception" || label === "Envoyés") loadMessages(); }
+    }, label)));
+    page.append(tabbar);
+    if (state.error) page.append(el("div", { class: "mail-error", role: "alert" }, state.error));
     root.append(page);
+    if (state.tab === "Réception" || state.tab === "Envoyés") renderInbox(page);
+    else if (state.tab === "Boîtes mail") renderMailboxes(page);
+    else if (state.tab === "Domaines") renderDomains(page);
+    else renderSettings(page);
   }
-  function renderInbox(page){
-    const tools=h("div",{class:"mail-toolbar"},h("span",{class:"mail-muted"},state.tab==="Réception"?"Messages reçus":"Messages envoyés"),button("Actualiser",loadMessages));
-    page.append(tools);
-    if(state.selected){const m=state.selected;page.append(h("article",{class:"mail-reader"},button("← Retour",()=>{state.selected=null;render()}),h("h2",{},m.subject||"(sans objet)"),h("div",{class:"mail-meta"},(m.from||[]).map(x=>x.email||x.name||"").join(", ")+" · "+(m.receivedAt?new Date(m.receivedAt).toLocaleString("fr-FR"):"")),h("p",{},(m.to||[]).map(x=>x.email).join(", ")),h("div",{class:"mail-body"},m.preview||Object.values(m.bodyValues||{}).map(v=>v.value||"").join("\n")||"Contenu du message indisponible."),button("Répondre",()=>compose(m)));return;}
-    if(state.loading){page.append(h("div",{class:"fe-empty"},"Chargement des messages…"));return;}
-    if(!state.messages.length){page.append(h("div",{class:"mail-empty"},h("div",{class:"mail-empty-icon"},"✉"),h("h2",{},"Aucun message à afficher"),h("p",{},"Les messages réels apparaîtront ici une fois Stalwart configuré et connecté.")));return;}
-    const list=h("div",{class:"mail-list"});state.messages.forEach(m=>list.append(h("button",{class:"mail-row",type:"button",onclick:()=>{state.selected=m;render()}},h("span",{class:"mail-avatar"},((m.from||[])[0]?.name||((m.from||[])[0]?.email)||"?").slice(0,1).toUpperCase()),h("span",{class:"mail-row-main"},h("b",{},(m.from||[]).map(x=>x.name||x.email).join(", ")||"Expéditeur inconnu"),h("strong",{},m.subject||"(sans objet)"),h("span",{class:"mail-muted"},m.preview||"")),h("time",{},m.receivedAt?new Date(m.receivedAt).toLocaleDateString("fr-FR"):""))));page.append(list);
+  function renderInbox(page) {
+    page.append(el("div", { class: "mail-toolbar" },
+      el("span", { class: "mail-muted" }, state.tab === "Envoyés" ? "Messages envoyés" : "Messages reçus"),
+      button("Actualiser", loadMessages)));
+    if (state.loading) { page.append(el("div", { class: "fe-empty" }, "Chargement des messages…")); return; }
+    if (state.selected) {
+      const message = state.selected;
+      const body = message.preview || Object.values(message.bodyValues || {}).map(part => part.value || "").join("\n") || "Contenu indisponible.";
+      page.append(el("article", { class: "mail-reader" },
+        button("← Retour", () => { state.selected = null; show(); }),
+        el("h2", {}, message.subject || "(sans objet)"),
+        el("div", { class: "mail-meta" }, (message.from || []).map(x => x.name || x.email || "").join(", ") + " · " + (message.receivedAt ? new Date(message.receivedAt).toLocaleString("fr-FR") : "")),
+        el("p", {}, "À : " + (message.to || []).map(x => x.email || "").join(", ")),
+        el("div", { class: "mail-body" }, body),
+        button("Répondre", () => compose(message))));
+      return;
+    }
+    if (!state.messages.length) {
+      page.append(el("div", { class: "mail-empty" }, el("div", { class: "mail-empty-icon" }, "✉"),
+        el("h2", {}, "Aucun message à afficher"),
+        el("p", {}, "Les messages réels apparaîtront ici lorsque le compte Stalwart sera configuré.")));
+      return;
+    }
+    const list = el("div", { class: "mail-list" });
+    state.messages.forEach(message => {
+      const sender = (message.from || [])[0] || {};
+      list.append(el("button", { type: "button", class: "mail-row", onclick: () => { state.selected = message; show(); } },
+        el("span", { class: "mail-avatar" }, (sender.name || sender.email || "?").slice(0, 1).toUpperCase()),
+        el("span", { class: "mail-row-main" },
+          el("b", {}, sender.name || sender.email || "Expéditeur inconnu"),
+          el("strong", {}, message.subject || "(sans objet)"),
+          el("span", { class: "mail-muted" }, message.preview || "")),
+        el("time", {}, message.receivedAt ? new Date(message.receivedAt).toLocaleDateString("fr-FR") : "")));
+    });
+    page.append(list);
   }
-  async function loadMessages(){state.loading=true;state.error="";render();try{const d=await api("/api/mail/messages?folder="+encodeURIComponent(state.tab==="Envoyés"?"sent":"inbox"));state.messages=Array.isArray(d.messages)?d.messages:[];}catch(e){state.messages=[];state.error=e.message;}finally{state.loading=false;render();}}
-  function compose(reply){const overlay=h("div",{class:"mail-overlay",role:"dialog","aria-modal":"true","aria-label":"Nouveau message"});const box=h("form",{class:"mail-compose",onsubmit:async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const send=overlay.querySelector('[type="submit"]');send.disabled=true;send.textContent="Envoi…";try{await api("/api/mail/send",{method:"POST",body:JSON.stringify({to:String(fd.get("to")),subject:String(fd.get("subject")),text:String(fd.get("text"))})});overlay.remove();state.tab="Envoyés";await loadMessages();}catch(err){const msg=overlay.querySelector(".mail-error")||h("div",{class:"mail-error"});msg.textContent=err.message;if(!msg.isConnected)box.prepend(msg);send.disabled=false;send.textContent="Envoyer";}}},h("div",{class:"mail-compose-head"},h("h2",{},reply?"Répondre":"Nouveau message"),button("Fermer",()=>overlay.remove())),);const to=field("Destinataire","to","nom@domaine.fr","email"),sub=field("Objet","subject","Objet du message");if(reply){to.input.value=(reply.from||[])[0]?.email||"";sub.input.value=/^re:/i.test(reply.subject||"")?reply.subject:"Re : "+(reply.subject||"");}const body=h("label",{class:"mail-field"},"Message",h("textarea",{name:"text",required:"required",rows:"9",placeholder:"Votre message…"}));box.append(to.wrap,sub.wrap,body,h("div",{class:"mail-compose-actions"},button("Annuler",()=>overlay.remove()),h("button",{class:"fe-btn primary",type:"submit"},"Envoyer")));overlay.append(box);overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove()});document.body.append(overlay);to.input.focus();}
-  async function renderMailboxes(page){page.append(h("div",{class:"mail-section-head"},h("h2",{},"Boîtes mail"),button("Créer une boîte",()=>createMailbox(),true)));try{const d=await api("/api/mail/mailboxes");state.accounts=d.mailboxes||[];if(!state.accounts.length)page.append(h("div",{class:"mail-empty"},"Aucune boîte retournée par Stalwart."));else{const list=h("div",{class:"mail-list"});state.accounts.forEach(a=>list.append(h("div",{class:"mail-row"},h("span",{class:"mail-avatar"},"@"),h("span",{class:"mail-row-main"},h("b",{},a.name||a.email||a.id),h("span",{class:"mail-muted"},a.description||a.type||"Boîte gérée par Stalwart")),button("Supprimer",()=>deleteMailbox(a.id||a.name)))));page.append(list);}}catch(e){state.error=e.message;page.append(h("div",{class:"mail-error"},e.message));}}
-  async function createMailbox(){const email=prompt("Adresse complète (ex. contact@exemple.fr) :");if(!email)return;const password=prompt("Mot de passe temporaire (à conserver de façon sécurisée) :");if(!password)return;try{await api("/api/mail/mailboxes",{method:"POST",body:JSON.stringify({email,password})});render();}catch(e){state.error=e.message;render();}}
-  async function deleteMailbox(id){if(!confirm("Supprimer la boîte "+id+" ? Cette action peut supprimer son accès à la messagerie."))return;try{await api("/api/mail/mailboxes/"+encodeURIComponent(id),{method:"DELETE"});render();}catch(e){state.error=e.message;render();}}
-  async function renderDomains(page){page.append(h("div",{class:"mail-section-head"},h("h2",{},"Domaines de messagerie"),button("Ajouter un domaine",()=>addDomain(),true)));page.append(h("div",{class:"mail-card"},h("p",{},"Chaque domaine doit pointer vers ce serveur avec les enregistrements MX, SPF, DKIM et DMARC. Les valeurs sont propres à votre instance Stalwart.")));try{const d=await api("/api/mail/domains");const domains=d.domains||[];if(!domains.length)page.append(h("div",{class:"mail-empty"},"Aucun domaine configuré."));domains.forEach(x=>page.append(h("div",{class:"mail-card"},h("h3",{},x.name||x.domain||x),h("p",{class:"mail-muted"},"Gestion des domaines via l’API d’administration Stalwart."),button("Supprimer",async()=>{if(confirm("Supprimer ce domaine ?")){try{await api("/api/mail/domains/"+encodeURIComponent(x.name||x.domain||x),{method:"DELETE"});render()}catch(e){state.error=e.message;render()}}}))));}catch(e){state.error=e.message;page.append(h("div",{class:"mail-error"},e.message));}}
-  async function addDomain(){const domain=prompt("Nom de domaine (ex. exemple.fr) :");if(!domain)return;try{await api("/api/mail/domains",{method:"POST",body:JSON.stringify({domain})});render();}catch(e){state.error=e.message;render();}}
-  function renderSettings(page){page.append(h("h2",{},"Paramètres"),h("div",{class:"mail-card"},h("h3",{},"État du service"),h("p",{},"Les identifiants Stalwart restent côté serveur. Configurez STALWART_URL, STALWART_ADMIN_TOKEN et STALWART_JMAP_TOKEN dans l’environnement de Deploy."),button("Vérifier la connexion",async()=>{try{const d=await api("/api/mail/status");alert(d.configured?"Stalwart configuré : "+d.url:"Stalwart non configuré.");}catch(e){alert(e.message)}}),h("p",{class:"mail-muted"},"Aucun mot de passe ni jeton ne doit être enregistré dans le navigateur.")));}
-  function init(){const nav=document.querySelector(".nav-group-first");if(!nav||document.getElementById("nav-mails"))return;const group=h("div",{class:"nav-group-first",id:"nav-mails"});group.append(h("a",{href:"#mails",class:"nav-item"},h("i",{"data-lucide":"mail"}),h("span",{},"Mails")));const sub=h("div",{class:"nav-group"},h("button",{type:"button",class:"nav-group-title","aria-expanded":"false","aria-controls":"nav-mails-items"},h("i",{"data-lucide":"mail"}),h("span",{},"Messagerie"),h("i",{"data-lucide":"chevron-right",class:"group-chevron"})),h("div",{class:"nav-group-items",id:"nav-mails-items","aria-hidden":"true",inert:""},h("div",{class:"nav-group-items-inner"},...tabs.map(t=>h("a",{href:"#mail-"+({"Réception":"reception","Envoyés":"envoyes","Boîtes mail":"boites-mail","Domaines":"domaines","Paramètres":"parametres"}[t]),class:"nav-item nav-item-left"},h("span",{},t))))));nav.after(group,sub);window.lucide?.createIcons();sub.querySelector(".nav-group-title").addEventListener("click",()=>{const b=sub.querySelector(".nav-group-title"),p=sub.querySelector(".nav-group-items"),open=b.getAttribute("aria-expanded")!=="true";b.setAttribute("aria-expanded",String(open));p.setAttribute("aria-hidden",String(!open));p.inert=!open;p.style.height=open?p.scrollHeight+"px":"0px";p.style.visibility=open?"visible":"hidden";sub.classList.toggle("is-open",open)});document.addEventListener("click",e=>{const a=e.target.closest('a[href^="#mail-"]');if(!a)return;e.preventDefault();const key=a.getAttribute("href").slice(6);state.tab=({"reception":"Réception","envoyes":"Envoyés","boites-mail":"Boîtes mail","domaines":"Domaines","parametres":"Paramètres"})[key]||"Réception";state.selected=null;location.hash="mails";showMailPage();});document.querySelector('.nav-item[href="#mails"]')?.addEventListener("click",e=>{e.preventDefault();state.tab="Réception";location.hash="mails";showMailPage();});}
-  function showMailPage(){document.getElementById("content-title").textContent="/ Mails";document.querySelectorAll(".nav-item").forEach(i=>i.classList.toggle("active",i.getAttribute("href")==="#mails"||i.getAttribute("href")==="#mail-"+({"Réception":"reception","Envoyés":"envoyes","Boîtes mail":"boites-mail","Domaines":"domaines","Paramètres":"parametres"}[state.tab])));render();if(state.tab==="Réception"||state.tab==="Envoyés")loadMessages();}
-  const css=h("link",{rel:"stylesheet",href:"css/mail.css"});document.head.append(css);init();window.addEventListener("hashchange",()=>{if(location.hash==="#mails"||location.hash.startsWith("#mail-"))showMailPage()});if(location.hash==="#mails"||location.hash.startsWith("#mail-"))showMailPage();window.DeployMail={render:showMailPage};
+  async function loadMessages() {
+    state.loading = true; state.error = ""; show();
+    try {
+      const folder = state.tab === "Envoyés" ? "sent" : "inbox";
+      const data = await api("/api/mail/messages?folder=" + folder);
+      state.messages = Array.isArray(data.messages) ? data.messages : [];
+    } catch (error) { state.messages = []; state.error = error.message; }
+    finally { state.loading = false; show(); }
+  }
+  function compose(reply = null) {
+    const overlay = el("div", { class: "mail-overlay", role: "dialog", "aria-modal": "true", "aria-label": "Nouveau message" });
+    const form = el("form", { class: "mail-compose" });
+    const recipient = el("input", { class: "fe-input", name: "to", type: "email", required: "required", placeholder: "nom@domaine.fr" });
+    const subject = el("input", { class: "fe-input", name: "subject", required: "required", placeholder: "Objet du message" });
+    const message = el("textarea", { name: "text", required: "required", rows: "9", placeholder: "Votre message…" });
+    const field = (label, input) => el("label", { class: "mail-field" }, el("span", {}, label), input);
+    if (reply) {
+      recipient.value = ((reply.from || [])[0] || {}).email || "";
+      subject.value = /^re:/i.test(reply.subject || "") ? reply.subject : "Re : " + (reply.subject || "");
+    }
+    const error = el("div", { class: "mail-error", hidden: "" });
+    const close = () => overlay.remove();
+    const submit = el("button", { class: "fe-btn primary", type: "submit" }, "Envoyer");
+    form.append(el("div", { class: "mail-compose-head" }, el("h2", {}, reply ? "Répondre" : "Nouveau message"), button("Fermer", close)),
+      error, field("Destinataire", recipient), field("Objet", subject), field("Message", message),
+      el("div", { class: "mail-compose-actions" }, button("Annuler", close), submit));
+    form.addEventListener("submit", async event => {
+      event.preventDefault(); submit.disabled = true; submit.textContent = "Envoi…"; error.hidden = true;
+      try {
+        await api("/api/mail/send", { method: "POST", body: JSON.stringify({ to: recipient.value, subject: subject.value, text: message.value }) });
+        close(); state.tab = "Envoyés"; state.selected = null; await loadMessages();
+      } catch (e) { error.textContent = e.message; error.hidden = false; submit.disabled = false; submit.textContent = "Envoyer"; }
+    });
+    overlay.append(form); overlay.addEventListener("click", event => { if (event.target === overlay) close(); });
+    document.body.append(overlay); recipient.focus();
+  }
+  async function renderMailboxes(page) {
+    page.append(el("div", { class: "mail-section-head" }, el("h2", {}, "Boîtes mail"), button("Créer une boîte", createMailbox, true)));
+    try {
+      const data = await api("/api/mail/mailboxes"), list = el("div", { class: "mail-list" });
+      (data.mailboxes || []).forEach(account => list.append(el("div", { class: "mail-row" },
+        el("span", { class: "mail-avatar" }, "@"),
+        el("span", { class: "mail-row-main" }, el("b", {}, account.email || account.name || account.id), el("span", { class: "mail-muted" }, account.description || account.type || "Stalwart")),
+        button("Supprimer", () => deleteMailbox(account.id)))));
+      page.append(list);
+      if (!(data.mailboxes || []).length) page.append(el("div", { class: "mail-empty" }, "Aucune boîte retournée par Stalwart."));
+    } catch (error) { state.error = error.message; page.append(el("div", { class: "mail-error" }, error.message)); }
+  }
+  async function createMailbox() {
+    const email = prompt("Adresse complète (ex. contact@exemple.fr) :");
+    if (!email) return;
+    const password = prompt("Mot de passe temporaire (12 caractères minimum) :");
+    if (!password) return;
+    try { await api("/api/mail/mailboxes", { method: "POST", body: JSON.stringify({ email, password }) }); state.error = ""; show(); }
+    catch (error) { state.error = error.message; show(); }
+  }
+  async function deleteMailbox(id) {
+    if (!id || !confirm("Supprimer cette boîte mail ? Cette action est irréversible.")) return;
+    try { await api("/api/mail/mailboxes/" + encodeURIComponent(id), { method: "DELETE" }); state.error = ""; show(); }
+    catch (error) { state.error = error.message; show(); }
+  }
+  async function renderDomains(page) {
+    page.append(el("div", { class: "mail-section-head" }, el("h2", {}, "Domaines de messagerie"), button("Ajouter un domaine", addDomain, true)),
+      el("div", { class: "mail-card" }, el("p", {}, "Configurez MX, SPF, DKIM et DMARC dans le DNS de chaque domaine. Les valeurs DKIM doivent provenir de votre instance Stalwart.")));
+    try {
+      const data = await api("/api/mail/domains"), domains = data.domains || [];
+      domains.forEach(domain => page.append(el("div", { class: "mail-card" },
+        el("h3", {}, domain.name || domain.id), el("p", { class: "mail-muted" }, domain.description || "Domaine géré par Stalwart"),
+        button("Supprimer", async () => {
+          if (!confirm("Supprimer le domaine " + (domain.name || domain.id) + " ?")) return;
+          try { await api("/api/mail/domains/" + encodeURIComponent(domain.id), { method: "DELETE" }); show(); }
+          catch (error) { state.error = error.message; show(); }
+        }))));
+      if (!domains.length) page.append(el("div", { class: "mail-empty" }, "Aucun domaine configuré."));
+    } catch (error) { state.error = error.message; page.append(el("div", { class: "mail-error" }, error.message)); }
+  }
+  async function addDomain() {
+    const domain = prompt("Nom de domaine (ex. exemple.fr) :");
+    if (!domain) return;
+    try { await api("/api/mail/domains", { method: "POST", body: JSON.stringify({ domain }) }); state.error = ""; show(); }
+    catch (error) { state.error = error.message; show(); }
+  }
+  function renderSettings(page) {
+    page.append(el("h2", {}, "Paramètres"), el("div", { class: "mail-card" },
+      el("h3", {}, "État du service"),
+      el("p", {}, "Les jetons Stalwart restent côté serveur. Configurez STALWART_URL, STALWART_ADMIN_TOKEN, STALWART_JMAP_TOKEN, STALWART_JMAP_ACCOUNT_ID et STALWART_FROM_ADDRESS."),
+      button("Vérifier la connexion", async () => {
+        try { const data = await api("/api/mail/status"); alert(data.configured ? "Stalwart configuré : " + data.url : "Stalwart non configuré."); }
+        catch (error) { alert(error.message); }
+      }),
+      el("p", { class: "mail-muted" }, "Ne placez aucun mot de passe ni jeton dans le navigateur ou dans un fichier statique.")));
+  }
+  const stylesheet = el("link", { rel: "stylesheet", href: "css/mail.css" });
+  document.head.append(stylesheet);
+  injectNav();
+  document.addEventListener("click", event => {
+    const link = event.target.closest("a[href]");
+    if (!link) return;
+    if (link.getAttribute("href") === "#mails") { event.preventDefault(); state.tab = "Réception"; state.selected = null; location.hash = "mails"; show(); loadMessages(); }
+    else if (link.getAttribute("href").startsWith("#mail-")) {
+      event.preventDefault(); state.tab = labels[link.getAttribute("href").slice(6)] || "Réception";
+      state.selected = null; location.hash = "mails"; show();
+      if (state.tab === "Réception" || state.tab === "Envoyés") loadMessages();
+    }
+  });
+  window.addEventListener("hashchange", () => {
+    if (location.hash === "#mails" || location.hash.startsWith("#mail-")) {
+      if (location.hash.startsWith("#mail-")) state.tab = labels[location.hash.slice(6)] || state.tab;
+      show(); if (state.tab === "Réception" || state.tab === "Envoyés") loadMessages();
+    }
+  });
+  if (location.hash === "#mails" || location.hash.startsWith("#mail-")) {
+    if (location.hash.startsWith("#mail-")) state.tab = labels[location.hash.slice(6)] || state.tab;
+    show(); if (state.tab === "Réception" || state.tab === "Envoyés") loadMessages();
+  }
+  window.DeployMail = { show };
 })();
