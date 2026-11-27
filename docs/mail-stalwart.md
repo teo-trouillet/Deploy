@@ -18,7 +18,7 @@ Deploy conserve son interface statique, mais les fonctions Mails exigent le back
    - `STALWART_URL=https://mail.exemple.fr` (URL de base sans slash final)
    - `STALWART_ADMIN_TOKEN` : jeton d'API administrateur Stalwart
    - `STALWART_JMAP_TOKEN` : jeton d'accès JMAP dédié à la messagerie, avec les droits minimum requis
-   - `STALWART_JMAP_ACCOUNT_ID` : identifiant de compte JMAP par défaut
+   - `STALWART_JMAP_ACCOUNT_ID` : identifiant de compte JMAP par défaut\n   - `STALWART_FROM_ADDRESS` : adresse expéditeur autorisée par le compte JMAP
 4. Configurez `BASE_URL`, `SESSION_SECRET` et OAuth GitHub selon le README existant. Les routes mail requièrent une session Deploy authentifiée.
 5. Redémarrez Deploy, vérifiez `GET /api/mail/status`, puis testez l'envoi vers une adresse externe et la réception depuis l'extérieur.
 
@@ -38,4 +38,4 @@ Ne publiez pas de SPF multiple : fusionnez les mécanismes dans un seul enregist
 - Ne mettez jamais les jetons Stalwart dans le JavaScript, Git ou un fichier statique. Utilisez des secrets d'environnement du gestionnaire de déploiement.
 - Restreignez l'accès au dashboard aux administrateurs de confiance. Avant un usage multi-utilisateur, associez chaque session Deploy à un principal Stalwart dédié et imposez une autorisation par boîte.
 - L'envoi/réception Internet dépend aussi de la réputation IP, du PTR, des règles anti-abus, du TLS, du DNS et des politiques des destinataires.
-- Les API d'administration et JMAP varient selon les versions et la configuration Stalwart : validez les routes et permissions avec la version déployée avant production.
+- Deploy utilise le JMAP Mail standard pour les messages et l’API de gestion JMAP `urn:stalwart:jmap` pour les comptes/domaines (les anciennes API REST d’administration ne sont plus disponibles sur certaines versions récentes). Accordez uniquement les permissions JMAP nécessaires à la clé dédiée et validez les permissions de `x:Account/*`, `x:Domain/*`, `Email/*` et `EmailSubmission/*` avec la version déployée avant production.
