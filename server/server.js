@@ -74,7 +74,7 @@ function createServer() {
 
       // Stalwart: les secrets sont exclusivement côté serveur. Les routes exigent la session Deploy.
       const mailConfigured = !!(E.STALWART_URL && E.STALWART_ADMIN_TOKEN && E.STALWART_JMAP_TOKEN);
-      const mailBase = (E.STALWART_URL || '').replace(/\\/$/, '');
+      const mailBase = (E.STALWART_URL || '').replace(/\/$/, '');
       const mailAdmin = async (method, endpoint, data) => {
         if (!mailConfigured) throw Object.assign(new Error('Stalwart non configuré. Renseignez STALWART_URL, STALWART_ADMIN_TOKEN et STALWART_JMAP_TOKEN.'), { status: 503 });
         const r = await fetch(mailBase + endpoint, { method, headers: { Authorization: 'Bearer ' + E.STALWART_ADMIN_TOKEN, Accept: 'application/json', ...(data ? { 'Content-Type': 'application/json' } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}) });
@@ -98,7 +98,7 @@ function createServer() {
       const mailJsonBody = async () => { try { return JSON.parse(await body(req, 256 * 1024)); } catch { throw Object.assign(new Error('Corps JSON invalide ou trop volumineux.'), { status: 400 }); } };
       if (p.startsWith('/api/mail/')) {
         if (!mailConfigured && p !== '/api/mail/status') return json(res, 503, { error: 'Service Stalwart non configuré.' });
-        if (p === '/api/mail/status' && req.method === 'GET') return json(res, 200, { configured: mailConfigured, url: E.STALWART_URL ? E.STALWART_URL.replace(/\\/[^/]*$/, '/••••') : null });
+        if (p === '/api/mail/status' && req.method === 'GET') return json(res, 200, { configured: mailConfigured, url: E.STALWART_URL ? new URL(E.STALWART_URL).origin : null });
         if (p === '/api/mail/messages' && req.method === 'GET') {
           const folder = url.searchParams.get('folder') === 'sent' ? 'sent' : 'inbox';
           const { result, accountId } = await jmap([
