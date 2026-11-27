@@ -38,7 +38,7 @@ Pour publier l'app : Réglages › Pages › Source = **GitHub Actions**, le wor
 - Alertes : webhook sur le dépôt (événement *Workflow runs*, URL `BASE_URL/webhook/github`, secret = `WEBHOOK_SECRET`) et `NOTIFY_WEBHOOK_URL`.
 - Sessions en mémoire ; mets HTTPS devant. `npm test` lance les tests (Node ≥ 20). `GET /healthz` sert de sonde de santé ; les sessions expirent après 8 h.
 
-## Lancer en local
+## Messagerie intégrée (Stalwart)\n\nDeploy inclut un espace **Mails** connecté à une instance Stalwart auto-hébergée. Le serveur Node.js doit être activé et configuré avec `STALWART_URL`, `STALWART_ADMIN_TOKEN` et `STALWART_JMAP_TOKEN` (voir [la documentation de déploiement](docs/mail-stalwart.md) et `.env.example`). GitHub Pages seul ne permet pas la réception SMTP/IMAP. Configurez les ports, TLS, reverse DNS et les enregistrements MX/SPF/DKIM/DMARC avant toute mise en production.\n\n## Lancer en local
 
 Le projet est statique, il suffit de servir le dossier :
 
