@@ -51,3 +51,15 @@ test('index.html : lucide épinglé et icône inexistante retirée', () => {
   assert.ok(!html.includes('lucide@latest'), 'lucide doit être épinglé');
   assert.ok(!html.includes('square-arrow-left-enter'));
 });
+
+test('HTTP : pas de traversée de chemin (%2F) vers .env / server', async () => {
+  const env = path.join(__dirname, '..', '.env'), had = fs.existsSync(env);
+  if (!had) fs.writeFileSync(env, 'SECRET=1');
+  const srv = createServer().listen(0), b = 'http://127.0.0.1:' + srv.address().port;
+  try {
+    for (const u of ['/css/..%2F.env', '/js/..%2Fserver%2Fserver.js', '/css/..%2fpackage.json', '/%2e%2e%2f.env', '/index.html%00'])
+      assert.strictEqual((await fetch(b + u)).status, 404, u);
+    assert.strictEqual((await fetch(b + '/')).status, 200);
+    assert.strictEqual((await fetch(b + '/js/app.js')).status, 200);
+  } finally { srv.close(); if (!had) fs.unlinkSync(env); }
+});

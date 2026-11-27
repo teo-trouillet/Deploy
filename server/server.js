@@ -6,6 +6,7 @@ const E = process.env, ROOT = path.join(__dirname, '..');
 const SECRET = E.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const PAGES_IPS = ['185.199.108.153', '185.199.109.153', '185.199.110.153', '185.199.111.153'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const PUBLIC = new Set(['index.html', 'landing.html', 'css', 'js']); // seuls éléments servis à la racine
 const sessions = new Map(), SESSION_TTL = 8 * 3600e3;
 if (!E.SESSION_SECRET) console.warn('SESSION_SECRET absent : les sessions seront perdues à chaque redémarrage (voir .env.example).');
 
@@ -88,10 +89,11 @@ function createServer() {
         if (!/^(?!-)[a-z0-9.-]+\.[a-z]{2,}$/.test(d) || !/^[\w-]+$/.test(u)) return json(res, 422, { error: 'domaine invalide' });
         return json(res, 200, await checkDns(d, u));
       }
-      // Fichiers statiques de l'app (hors dossiers internes).
-      const rel = decodeURIComponent(p === '/' ? '/index.html' : p), top = rel.split('/')[1] || '';
-      const file = path.join(ROOT, rel);
-      if (!file.startsWith(ROOT + path.sep) || ['server', 'test', 'node_modules'].includes(top) || top.startsWith('.') || /^package|^\.env/.test(top) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'introuvable' });
+      // Fichiers statiques : liste blanche appliquée au chemin RÉSOLU (et non au chemin brut),
+      // sinon `/css/..%2F.env` passerait le filtre puis serait normalisé vers `.env`.
+      let rel; try { rel = decodeURIComponent(p === '/' ? '/index.html' : p); } catch { return json(res, 404, { error: 'introuvable' }); }
+      const file = path.resolve(ROOT, '.' + rel), top = path.relative(ROOT, file).split(path.sep)[0];
+      if (rel.includes('\0') || !file.startsWith(ROOT + path.sep) || !PUBLIC.has(top) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'introuvable' });
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' });
       fs.createReadStream(file).pipe(res);
     } catch (e) { json(res, 500, { error: 'Erreur serveur' }); }
