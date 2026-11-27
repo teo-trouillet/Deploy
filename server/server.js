@@ -110,23 +110,35 @@ function createServer() {
           const q = await jmap([['Email/query', { accountId, filter: { inMailbox: box.id }, sort: [{ property: 'receivedAt', isAscending: false }], limit: 50 }, 'q']]);
           const ids = q.result.methodResponses?.find(x => x[0] === 'Email/query')?.[1]?.ids || [];
           if (!ids.length) return json(res, 200, { messages: [] });
-          const got = await jmap([['Email/get', { accountId, ids, properties: ['id','from','to','subject','preview','receivedAt','textBody','mailboxIds'] }, 'e']]);
+          const got = await jmap([['Email/get', { accountId, ids, properties: ['id','from','to','subject','preview','receivedAt','bodyValues','bodyStructure','mailboxIds'], fetchTextBodyValues: true }, 'e']]);
           const messages = got.result.methodResponses?.find(x => x[0] === 'Email/get')?.[1]?.list || [];
           return json(res, 200, { messages });
         }
         if (p === '/api/mail/send' && req.method === 'POST') {
-          const data = await mailJsonBody(), to = String(data.to || '').trim(), subject = String(data.subject || '').trim(), textBody = String(data.text || '');
+          const data = await mailJsonBody(), to = String(data.to || '').trim(), subject = String(data.subject || '').trim(), textBody = String(data.text || ''), from = String(E.STALWART_FROM_ADDRESS || '').trim();
           if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(to) || !subject || !textBody.trim()) return json(res, 422, { error: 'Destinataire, objet et message sont obligatoires.' });
+          if (!from || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from)) return json(res, 503, { error: 'Configurez STALWART_FROM_ADDRESS avec une adresse d’expédition autorisée.' });
           if (to.length > 254 || subject.length > 998 || textBody.length > 100000) return json(res, 413, { error: 'Message trop volumineux.' });
-          const { result: created, accountId } = await jmap([
-            ['Email/set', { accountId: E.STALWART_JMAP_ACCOUNT_ID || 'default', create: { draft: { mailboxIds: {}, keywords: { '$draft': true }, to: [{ email: to }], subject, textBody: [{ partId: 'body', type: 'text/plain', value: textBody }] } } }, 'create']
-          ]);
-          const emailSet = created.methodResponses?.find(x => x[0] === 'Email/set')?.[1];
-          const draftId = emailSet?.created?.draft?.id;
-          if (!draftId) return json(res, 502, { error: 'Stalwart n’a pas créé le brouillon : vérifiez les droits JMAP.' });
-          const submitted = await jmap([
-            ['EmailSubmission/set', { accountId, create: { submission: { emailId: draftId, envelope: { mailFrom: null, rcptTo: [{ email: to }] } } } }, 'submit']
-          ]);
+          const sr = await fetch(mailBase + '/jmap/session', { headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, Accept: 'application/json' } });
+          if (!sr.ok) return json(res, 502, { error: 'Impossible d’ouvrir la session JMAP (' + sr.status + ').' });
+          const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
+          if (!accountId || !sess.uploadUrl || !sess.apiUrl) return json(res, 502, { error: 'La session JMAP ne fournit pas les URL requises.' });
+          const encSubject = /[^\\x20-\\x7E]/.test(subject) ? '=?UTF-8?B?' + Buffer.from(subject).toString('base64') + '?=' : subject.replace(/[\\r\\n]/g, ' ');
+          const safeBody = textBody.replace(/\\r?\\n/g, '\\r\\n');
+          const rawMail = 'From: ' + from + '\\r\\nTo: ' + to + '\\r\\nSubject: ' + encSubject + '\\r\\nDate: ' + new Date().toUTCString() + '\\r\\nMIME-Version: 1.0\\r\\nContent-Type: text/plain; charset=UTF-8\\r\\nContent-Transfer-Encoding: 8bit\\r\\n\\r\\n' + safeBody + '\\r\\n';
+          const uploadUrl = sess.uploadUrl.replace('{accountId}', encodeURIComponent(accountId));
+          const uploaded = await fetch(uploadUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'message/rfc822' }, body: rawMail });
+          const blob = await uploaded.json().catch(() => ({}));
+          if (!uploaded.ok || !blob.blobId) return json(res, 502, { error: 'Stalwart a refusé le téléversement du message (' + uploaded.status + ').' });
+          const boxes = await jmap([['Mailbox/get', { accountId, ids: null }, 'mb']]);
+          const mailboxList = boxes.result.methodResponses?.find(x => x[0] === 'Mailbox/get')?.[1]?.list || [];
+          const drafts = mailboxList.find(m => m.role === 'drafts');
+          if (!drafts) return json(res, 502, { error: 'Aucun dossier Brouillons JMAP disponible pour ce compte.' });
+          const imported = await jmap([['Email/import', { accountId, emails: { newEmail: { blobId: blob.blobId, mailboxIds: { [drafts.id]: true }, keywords: { '$draft': true } } } }, 'import']]);
+          const importedPayload = imported.result.methodResponses?.find(x => x[0] === 'Email/import')?.[1];
+          const emailId = importedPayload?.created?.newEmail?.id;
+          if (!emailId) return json(res, 502, { error: 'Stalwart n’a pas importé le message : vérifiez les permissions JMAP.' });
+          const submitted = await jmap([['EmailSubmission/set', { accountId, create: { submission: { emailId, envelope: { mailFrom: { email: from }, rcptTo: [{ email: to }] } } }, 'submit']]);
           const submitSet = submitted.result.methodResponses?.find(x => x[0] === 'EmailSubmission/set')?.[1];
           if (submitSet?.notCreated?.submission) return json(res, 502, { error: 'Stalwart n’a pas pu soumettre le message.' });
           return json(res, 201, { sent: true });
