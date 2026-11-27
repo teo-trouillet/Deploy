@@ -88,7 +88,8 @@ function createServer() {
         if (!sr.ok) throw Object.assign(new Error('Impossible d’ouvrir la session JMAP (' + sr.status + ').'), { status: sr.status });
         const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
         if (!accountId || !sess.apiUrl) throw Object.assign(new Error('La session Stalwart ne fournit aucun compte JMAP utilisable.'), { status: 502 });
-        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission'], methodCalls: methods, createdIds: {} }) });
+        const normalizedMethods = methods.map(([method, args, callId]) => [method, { ...args, ...(args.accountId === 'default' ? { accountId } : {}) }, callId]);
+        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission'], methodCalls: normalizedMethods, createdIds: {} }) });
         const result = await jr.json().catch(() => ({}));
         if (!jr.ok) throw Object.assign(new Error('Requête JMAP refusée (' + jr.status + ').'), { status: jr.status });
         return { result, accountId };
