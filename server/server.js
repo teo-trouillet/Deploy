@@ -87,7 +87,7 @@ function createServer() {
         const sr = await fetch(mailBase + '/jmap/session', { headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, Accept: 'application/json' } });
         if (!sr.ok) throw Object.assign(new Error('Impossible d’ouvrir la session JMAP (' + sr.status + ').'), { status: sr.status });
         const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
-        if (!accountId || !sess.apiUrl) throw Object.assign(new Error('La session Stalwart ne fournit aucun compte JMAP utilisable.'), { status: 502 });
+        if (!sess.apiUrl) throw Object.assign(new Error('La session Stalwart ne fournit aucune URL JMAP utilisable.'), { status: 502 });
         const normalizedMethods = methods.map(([method, args, callId]) => [method, { ...args, ...(args.accountId === 'default' ? { accountId } : {}) }, callId]);
         const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission', 'urn:stalwart:jmap'], methodCalls: normalizedMethods, createdIds: {} }) });
         const result = await jr.json().catch(() => ({}));
@@ -104,6 +104,7 @@ function createServer() {
             ['Mailbox/get', { accountId: E.STALWART_JMAP_ACCOUNT_ID || 'default', ids: null }, 'mb'],
           ]);
           // A second JMAP call uses the actual account ID resolved from the session.
+          if (!accountId) return json(res, 502, { error: 'Aucun compte JMAP associé au jeton. Configurez STALWART_JMAP_ACCOUNT_ID.' });
           const mailboxes = result.methodResponses?.[0]?.[1]?.list || [];
           const box = mailboxes.find(m => m.role === (folder === 'sent' ? 'sent' : 'inbox'));
           if (!box) return json(res, 200, { messages: [] });
