@@ -7,6 +7,9 @@ const days = (n) => [...Array(n)].map((_, i) => new Date(Date.now() - (n - 1 - i
 const perDay = (runs, ds, f) => ds.map((d) => runs.filter((r) => f(r) && r.created_at.slice(0, 10) === d).length);
 const state = (r) => !r ? "" : r.status !== "completed" ? "run" : r.conclusion === "success" ? "ok" : "fail";
 const stateLabel = (r) => !r ? "—" : r.status !== "completed" ? "En cours" : r.conclusion === "success" ? "Prêt" : r.conclusion === "cancelled" ? "Annulé" : "Échec";
+// Production = tout ce qui n'est pas une pull request (push, lancement manuel, planifié). Les runs de PR (previews et nettoyage à la fermeture) faussent les métriques.
+const isProd = (r) => r.event !== "pull_request";
+const secsOf = (r) => (new Date(r.updated_at) - new Date(r.run_started_at)) / 1000;
 
 // Courbe fine qui se dessine à l'affichage ; « Aucune donnée » si tout est à zéro.
 function spark(data, color) {
@@ -34,10 +37,12 @@ async function vOverview(root) {
     gh(`/repos/${repo}/actions/runs?per_page=100`), gh(`/repos/${repo}/pages`).catch(() => null),
     gh(`/repos/${repo}/branches?per_page=30`).catch(() => []), gh(`/repos/${repo}/actions/variables`).catch(() => ({ variables: [] })),
     gh(`/repos/${repo}/contents/.github/workflows/deploy.yml`).catch(() => null)]);
-  const runs = d.workflow_runs, last = runs[0], url = pages?.html_url, host = url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : null;
+  const runs = d.workflow_runs, prod = runs.filter(isProd), last = prod[0] || runs[0], url = pages?.html_url, host = url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : null;
   const custom = pages?.cname, preview = !!wf && fromB64(wf.content).includes("pr-preview"), ds = days(14);
-  const r14 = runs.filter((r) => Date.now() - new Date(r.created_at) < 14 * 864e5), done = r14.filter((r) => r.status === "completed");
-  const f14 = done.filter((r) => r.conclusion === "failure").length, avg = done.length ? Math.round(done.reduce((a, r) => a + (new Date(r.updated_at) - new Date(r.run_started_at)) / 1000, 0) / done.length) : 0;
+  const r14 = prod.filter((r) => Date.now() - new Date(r.created_at) < 14 * 864e5), done = r14.filter((r) => r.status === "completed");
+  const f14 = done.filter((r) => r.conclusion === "failure").length, avg = done.length ? Math.round(done.reduce((a, r) => a + secsOf(r), 0) / done.length) : 0;
+  // Durée moyenne par jour (0 = aucun déploiement ce jour-là), cohérente avec le libellé « 14 derniers jours ».
+  const avgPerDay = ds.map((day) => { const x = done.filter((r) => r.created_at.slice(0, 10) === day); return x.length ? Math.round(x.reduce((a, r) => a + secsOf(r), 0) / x.length) : 0; });
 
   // 1. Bandeau d'état
   root.append(h("div", { class: "cf-strip" },
@@ -53,18 +58,18 @@ async function vOverview(root) {
       acc("Workflows", wf ? [li("file-code-2", "deploy.yml", wf.html_url)] : []), acc("Previews PR", preview ? [li("git-pull-request", "Actives (/pr-preview/pr-N/)")] : [])),
     wire(),
     h("div", { class: "cf-node" }, h("div", { class: "cf-node-head" }, ic("rocket"), h("b", {}, m.name), h("span", { class: "fe-dot " + state(last) })),
-      h("div", { class: "cf-node-body" }, h("span", { class: "cf-k" }, "Dernier build"), h("div", { class: "cf-kv" }, h("span", {}, "Statut"), h("em", { class: "cf-chip " + state(last) }, stateLabel(last))),
+      h("div", { class: "cf-node-body" }, h("span", { class: "cf-k" }, "Dernier build (production)"), h("div", { class: "cf-kv" }, h("span", {}, "Statut"), h("em", { class: "cf-chip " + state(last) }, stateLabel(last))),
         h("div", { class: "cf-kv" }, h("span", {}, "Durée"), h("em", { class: "cf-chip" }, last && last.status === "completed" ? dur(last.run_started_at, last.updated_at) : "—")),
         h("div", { class: "cf-kv" }, h("span", {}, "Previews"), h("em", { class: "cf-chip" }, preview ? "Activées" : "Désactivées")))),
     wire(),
     h("div", { class: "cf-col" }, acc("Variables", (vars.variables || []).map((v) => li("braces", v.name)), true), acc("Domaines", [url && li("link-2", host, url), custom && li("shield-check", custom)].filter(Boolean)))));
 
-  // 3. Métriques + domaines et routes
+  // 3. Métriques (production uniquement) + domaines et routes
   const metric = (k, v, data, c) => h("div", { class: "cf-metric" }, h("span", {}, k), h("b", {}, v), spark(data, c));
   root.append(h("div", { class: "cf-two" },
-    h("div", { class: "cf-card" }, h("div", { class: "cf-card-head" }, h("b", {}, "Métriques"), h("span", { class: "cf-chip" }, "14 derniers jours"), h("button", { type: "button", class: "cf-arrow", "aria-label": "Voir les statistiques", onclick: () => go("Statistiques") }, ic("arrow-right"))),
+    h("div", { class: "cf-card" }, h("div", { class: "cf-card-head" }, h("b", {}, "Métriques · production"), h("span", { class: "cf-chip" }, "14 derniers jours"), h("button", { type: "button", class: "cf-arrow", "aria-label": "Voir les statistiques", onclick: () => go("Statistiques") }, ic("arrow-right"))),
       h("div", { class: "cf-metrics" }, metric("Déploiements", String(r14.length), perDay(r14, ds, () => true), "var(--cf-blue)"),
-        metric("Durée moyenne", avg + " s", done.slice(0, 14).reverse().map((r) => (new Date(r.updated_at) - new Date(r.run_started_at)) / 1000), "var(--cf-blue)"),
+        metric("Durée moyenne", avg + " s", avgPerDay, "var(--cf-blue)"),
         metric("Échecs", String(f14), perDay(r14, ds, (r) => r.conclusion === "failure"), "var(--fail)"))),
     h("div", { class: "cf-card" }, h("div", { class: "cf-card-head" }, h("b", {}, "Domaines et routes"), h("button", { type: "button", class: "cf-arrow", "aria-label": "Gérer les domaines", onclick: () => go("Domaines") }, ic("arrow-right"))),
       h("div", { class: "cf-dom" }, h("span", { class: "cf-k" }, "github.io", h("em", { class: "cf-chip " + (url ? "ok" : "") }, url ? "Activé" : "Désactivé")), url ? h("a", { href: url, target: "_blank", rel: "noopener" }, host) : h("span", {}, "Pas encore publié")),
@@ -76,7 +81,7 @@ async function vOverview(root) {
     runs.length ? runs.slice(0, 5).map((r) => h("a", { class: "cf-dep", href: r.html_url, target: "_blank", rel: "noopener" },
       h("code", {}, r.head_sha.slice(0, 7)), h("em", { class: "cf-msg" }, r.display_title || "Sans message"),
       h("span", { class: "cf-st" }, h("i", { class: "fe-dot " + state(r) }), stateLabel(r), r.status === "completed" && h("small", {}, dur(r.run_started_at, r.updated_at))),
-      h("span", { class: "cf-chip" }, ic("git-branch"), r.head_branch), h("span", { class: "cf-by" }, "par " + (r.actor?.login || "—")), h("time", {}, ago(r.created_at)))) : h("p", { class: "cf-none pad" }, "Aucun déploiement : pousse un commit ou clique sur Déployer.")));
+      h("span", { class: "cf-chip" }, ic(isProd(r) ? "git-branch" : "git-pull-request"), r.head_branch), h("span", { class: "cf-by" }, "par " + (r.actor?.login || "—")), h("time", {}, ago(r.created_at)))) : h("p", { class: "cf-none pad" }, "Aucun déploiement : pousse un commit ou clique sur Déployer.")));
 
   // 5. Étapes suivantes
   const reco = [["Connecter un dépôt Git", true, "Git"], ["Ajouter un domaine personnalisé", !!custom, "Domaines"], ["Activer les previews de PR", preview, "Environnements"], ["Définir une variable d'environnement", (vars.variables || []).length > 0, "Variables d'environnement"]];
