@@ -140,7 +140,7 @@ function createServer() {
           const importedPayload = imported.result.methodResponses?.find(x => x[0] === 'Email/import')?.[1];
           const emailId = importedPayload?.created?.newEmail?.id;
           if (!emailId) return json(res, 502, { error: 'Stalwart n’a pas importé le message : vérifiez les permissions JMAP.' });
-          const submitted = await jmap([['EmailSubmission/set', { accountId, create: { submission: { emailId, envelope: { mailFrom: { email: from }, rcptTo: [{ email: to }] } } }, 'submit']]);
+          const submitted = await jmap([['EmailSubmission/set', { accountId, create: { submission: { emailId, envelope: { mailFrom: { email: from }, rcptTo: [{ email: to }] } } } }, 'submit']]);
           const submitSet = submitted.result.methodResponses?.find(x => x[0] === 'EmailSubmission/set')?.[1];
           if (submitSet?.notCreated?.submission) return json(res, 502, { error: 'Stalwart n’a pas pu soumettre le message.' });
           return json(res, 201, { sent: true });
