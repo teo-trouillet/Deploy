@@ -83,13 +83,14 @@ function createServer() {
         return dataOut;
       };
       const jmap = async (methods) => {
+        const token = methods.some(([method]) => method.startsWith('x:')) ? E.STALWART_ADMIN_TOKEN : E.STALWART_JMAP_TOKEN;
         if (!mailConfigured) throw Object.assign(new Error('Stalwart non configuré.'), { status: 503 });
-        const sr = await fetch(mailBase + '/jmap/session', { headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, Accept: 'application/json' } });
+        const sr = await fetch(mailBase + '/jmap/session', { headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' } });
         if (!sr.ok) throw Object.assign(new Error('Impossible d’ouvrir la session JMAP (' + sr.status + ').'), { status: sr.status });
         const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
         if (!sess.apiUrl) throw Object.assign(new Error('La session Stalwart ne fournit aucune URL JMAP utilisable.'), { status: 502 });
         const normalizedMethods = methods.map(([method, args, callId]) => [method, { ...args, ...(args.accountId === 'default' ? { accountId } : {}) }, callId]);
-        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission', 'urn:stalwart:jmap'], methodCalls: normalizedMethods, createdIds: {} }) });
+        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission', 'urn:stalwart:jmap'], methodCalls: normalizedMethods, createdIds: {} }) });
         const result = await jr.json().catch(() => ({}));
         if (!jr.ok) throw Object.assign(new Error('Requête JMAP refusée (' + jr.status + ').'), { status: jr.status });
         return { result, accountId };
