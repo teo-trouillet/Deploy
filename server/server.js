@@ -89,7 +89,7 @@ function createServer() {
         const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
         if (!accountId || !sess.apiUrl) throw Object.assign(new Error('La session Stalwart ne fournit aucun compte JMAP utilisable.'), { status: 502 });
         const normalizedMethods = methods.map(([method, args, callId]) => [method, { ...args, ...(args.accountId === 'default' ? { accountId } : {}) }, callId]);
-        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission'], methodCalls: normalizedMethods, createdIds: {} }) });
+        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission', 'urn:stalwart:jmap'], methodCalls: normalizedMethods, createdIds: {} }) });
         const result = await jr.json().catch(() => ({}));
         if (!jr.ok) throw Object.assign(new Error('Requête JMAP refusée (' + jr.status + ').'), { status: jr.status });
         return { result, accountId };
@@ -132,35 +132,55 @@ function createServer() {
           return json(res, 201, { sent: true });
         }
         if (p === '/api/mail/mailboxes' && req.method === 'GET') {
-          const d = await mailAdmin('GET', '/api/principal?type=individual');
-          return json(res, 200, { mailboxes: Array.isArray(d) ? d : (d.data || d.items || []) });
+          const q = await jmap([['x:Account/query', { filter: {} }, 'q']]);
+          const ids = q.result.methodResponses?.find(x => x[0] === 'x:Account/query')?.[1]?.ids || [];
+          if (!ids.length) return json(res, 200, { mailboxes: [] });
+          const got = await jmap([['x:Account/get', { ids }, 'g']]);
+          const list = got.result.methodResponses?.find(x => x[0] === 'x:Account/get')?.[1]?.list || [];
+          return json(res, 200, { mailboxes: list.map(a => ({ id: a.id, name: a.emailAddress || (a.name + '@' + (a.domainName || '')), email: a.emailAddress, description: a.description, type: a['@type'] })) });
         }
         if (p === '/api/mail/mailboxes' && req.method === 'POST') {
           const d = await mailJsonBody(), email = String(d.email || '').trim().toLowerCase(), password = String(d.password || '');
           if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json(res, 422, { error: 'Adresse invalide et mot de passe de 12 à 256 caractères requis.' });
-          const r = await mailAdmin('POST', '/api/principal', { type: 'individual', name: email, emails: [email], secrets: [password] });
-          return json(res, 201, { mailbox: r });
+          const [local, domain] = email.split('@');
+          const dq = await jmap([['x:Domain/query', { filter: { name: domain } }, 'q']]);
+          const domainId = dq.result.methodResponses?.find(x => x[0] === 'x:Domain/query')?.[1]?.ids?.[0];
+          if (!domainId) return json(res, 422, { error: 'Ajoutez d’abord ce domaine dans l’onglet Domaines.' });
+          const created = await jmap([['x:Account/set', { create: { newAccount: { '@type': 'User', name: local, domainId, credentials: [{ '@type': 'Password', secret: password }], memberGroupIds: {}, roles: { '@type': 'User' }, permissions: { '@type': 'Inherit' }, quotas: {}, aliases: {}, encryptionAtRest: { '@type': 'Disabled' } } } }, 'set']]);
+          const payload = created.result.methodResponses?.find(x => x[0] === 'x:Account/set')?.[1];
+          if (payload?.notCreated?.newAccount) return json(res, 502, { error: 'Stalwart a refusé la création du compte. Vérifiez le schéma et les permissions x:Account/set.' });
+          return json(res, 201, { mailbox: payload?.created?.newAccount || {} });
         }
         if (p.startsWith('/api/mail/mailboxes/') && req.method === 'DELETE') {
-          const name = decodeURIComponent(p.slice('/api/mail/mailboxes/'.length));
-          if (!/^[^\\s/]+@[^\\s/]+$/.test(name) && !/^[a-zA-Z0-9._-]+$/.test(name)) return json(res, 400, { error: 'Identifiant de boîte invalide.' });
-          await mailAdmin('DELETE', '/api/principal/' + encodeURIComponent(name));
+          const id = decodeURIComponent(p.slice('/api/mail/mailboxes/'.length));
+          if (!/^[a-zA-Z0-9._-]{1,128}$/.test(id)) return json(res, 400, { error: 'Identifiant de boîte invalide.' });
+          const result = await jmap([['x:Account/set', { destroy: [id] }, 'set']]);
+          const payload = result.result.methodResponses?.find(x => x[0] === 'x:Account/set')?.[1];
+          if (payload?.notDestroyed?.[id]) return json(res, 502, { error: 'Stalwart n’a pas supprimé ce compte.' });
           return json(res, 200, { deleted: true });
         }
         if (p === '/api/mail/domains' && req.method === 'GET') {
-          const d = await mailAdmin('GET', '/api/principal?type=domain');
-          return json(res, 200, { domains: Array.isArray(d) ? d : (d.data || d.items || []) });
+          const q = await jmap([['x:Domain/query', { filter: {} }, 'q']]);
+          const ids = q.result.methodResponses?.find(x => x[0] === 'x:Domain/query')?.[1]?.ids || [];
+          if (!ids.length) return json(res, 200, { domains: [] });
+          const got = await jmap([['x:Domain/get', { ids }, 'g']]);
+          const list = got.result.methodResponses?.find(x => x[0] === 'x:Domain/get')?.[1]?.list || [];
+          return json(res, 200, { domains: list.map(d => ({ id: d.id, name: d.name, description: d.description })) });
         }
         if (p === '/api/mail/domains' && req.method === 'POST') {
           const d = await mailJsonBody(), domain = String(d.domain || '').trim().toLowerCase();
           if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) return json(res, 422, { error: 'Nom de domaine invalide.' });
-          const r = await mailAdmin('POST', '/api/principal', { type: 'domain', name: domain });
-          return json(res, 201, { domain: r });
+          const created = await jmap([['x:Domain/set', { create: { newDomain: { name: domain, aliases: {}, certificateManagement: { '@type': 'Manual' }, dnsManagement: { '@type': 'Manual' }, subAddressing: { '@type': 'Enabled' } } }, 'set']]);
+          const payload = created.result.methodResponses?.find(x => x[0] === 'x:Domain/set')?.[1];
+          if (payload?.notCreated?.newDomain) return json(res, 502, { error: 'Stalwart a refusé la création du domaine.' });
+          return json(res, 201, { domain: payload?.created?.newDomain || {} });
         }
         if (p.startsWith('/api/mail/domains/') && req.method === 'DELETE') {
-          const name = decodeURIComponent(p.slice('/api/mail/domains/'.length));
-          if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(name)) return json(res, 400, { error: 'Nom de domaine invalide.' });
-          await mailAdmin('DELETE', '/api/principal/' + encodeURIComponent(name));
+          const id = decodeURIComponent(p.slice('/api/mail/domains/'.length));
+          if (!/^[a-zA-Z0-9._-]{1,128}$/.test(id)) return json(res, 400, { error: 'Identifiant de domaine invalide.' });
+          const result = await jmap([['x:Domain/set', { destroy: [id] }, 'set']]);
+          const payload = result.result.methodResponses?.find(x => x[0] === 'x:Domain/set')?.[1];
+          if (payload?.notDestroyed?.[id]) return json(res, 502, { error: 'Stalwart n’a pas supprimé ce domaine.' });
           return json(res, 200, { deleted: true });
         }
         return json(res, 405, { error: 'Méthode non autorisée.' }, { Allow: 'GET, POST, DELETE' });
