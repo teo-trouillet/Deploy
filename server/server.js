@@ -71,6 +71,99 @@ function createServer() {
         return json(res, 200, { notified: !!n });
       }
       if (p.startsWith('/api/') && !s) return json(res, 401, { error: 'Non connecté' });
+
+      // Stalwart: les secrets sont exclusivement côté serveur. Les routes exigent la session Deploy.
+      const mailConfigured = !!(E.STALWART_URL && E.STALWART_ADMIN_TOKEN && E.STALWART_JMAP_TOKEN);
+      const mailBase = (E.STALWART_URL || '').replace(/\\/$/, '');
+      const mailAdmin = async (method, endpoint, data) => {
+        if (!mailConfigured) throw Object.assign(new Error('Stalwart non configuré. Renseignez STALWART_URL, STALWART_ADMIN_TOKEN et STALWART_JMAP_TOKEN.'), { status: 503 });
+        const r = await fetch(mailBase + endpoint, { method, headers: { Authorization: 'Bearer ' + E.STALWART_ADMIN_TOKEN, Accept: 'application/json', ...(data ? { 'Content-Type': 'application/json' } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}) });
+        const raw = await r.text(); let dataOut; try { dataOut = raw ? JSON.parse(raw) : {}; } catch { dataOut = { message: raw.slice(0, 300) }; }
+        if (!r.ok) throw Object.assign(new Error(dataOut.message || dataOut.error || 'Stalwart a refusé la requête (' + r.status + ').'), { status: r.status });
+        return dataOut;
+      };
+      const jmap = async (methods) => {
+        if (!mailConfigured) throw Object.assign(new Error('Stalwart non configuré.'), { status: 503 });
+        const sr = await fetch(mailBase + '/jmap/session', { headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, Accept: 'application/json' } });
+        if (!sr.ok) throw Object.assign(new Error('Impossible d’ouvrir la session JMAP (' + sr.status + ').'), { status: sr.status });
+        const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
+        if (!accountId || !sess.apiUrl) throw Object.assign(new Error('La session Stalwart ne fournit aucun compte JMAP utilisable.'), { status: 502 });
+        const jr = await fetch(sess.apiUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission'], methodCalls: methods, createdIds: {} }) });
+        const result = await jr.json().catch(() => ({}));
+        if (!jr.ok) throw Object.assign(new Error('Requête JMAP refusée (' + jr.status + ').'), { status: jr.status });
+        return { result, accountId };
+      };
+      const mailJsonBody = async () => { try { return JSON.parse(await body(req, 256 * 1024)); } catch { throw Object.assign(new Error('Corps JSON invalide ou trop volumineux.'), { status: 400 }); } };
+      if (p.startsWith('/api/mail/')) {
+        if (!mailConfigured && p !== '/api/mail/status') return json(res, 503, { error: 'Service Stalwart non configuré.' });
+        if (p === '/api/mail/status' && req.method === 'GET') return json(res, 200, { configured: mailConfigured, url: E.STALWART_URL ? E.STALWART_URL.replace(/\\/[^/]*$/, '/••••') : null });
+        if (p === '/api/mail/messages' && req.method === 'GET') {
+          const folder = url.searchParams.get('folder') === 'sent' ? 'sent' : 'inbox';
+          const { result, accountId } = await jmap([
+            ['Mailbox/get', { accountId: E.STALWART_JMAP_ACCOUNT_ID || 'default', ids: null }, 'mb'],
+          ]);
+          // A second JMAP call uses the actual account ID resolved from the session.
+          const mailboxes = result.methodResponses?.[0]?.[1]?.list || [];
+          const box = mailboxes.find(m => m.role === (folder === 'sent' ? 'sent' : 'inbox'));
+          if (!box) return json(res, 200, { messages: [] });
+          const q = await jmap([['Email/query', { accountId, filter: { inMailbox: box.id }, sort: [{ property: 'receivedAt', isAscending: false }], limit: 50 }, 'q']]);
+          const ids = q.result.methodResponses?.find(x => x[0] === 'Email/query')?.[1]?.ids || [];
+          if (!ids.length) return json(res, 200, { messages: [] });
+          const got = await jmap([['Email/get', { accountId, ids, properties: ['id','from','to','subject','preview','receivedAt','textBody','mailboxIds'] }, 'e']]);
+          const messages = got.result.methodResponses?.find(x => x[0] === 'Email/get')?.[1]?.list || [];
+          return json(res, 200, { messages });
+        }
+        if (p === '/api/mail/send' && req.method === 'POST') {
+          const data = await mailJsonBody(), to = String(data.to || '').trim(), subject = String(data.subject || '').trim(), textBody = String(data.text || '');
+          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(to) || !subject || !textBody.trim()) return json(res, 422, { error: 'Destinataire, objet et message sont obligatoires.' });
+          if (to.length > 254 || subject.length > 998 || textBody.length > 100000) return json(res, 413, { error: 'Message trop volumineux.' });
+          const { result: created, accountId } = await jmap([
+            ['Email/set', { accountId: E.STALWART_JMAP_ACCOUNT_ID || 'default', create: { draft: { mailboxIds: {}, keywords: { '$draft': true }, to: [{ email: to }], subject, textBody: [{ partId: 'body', type: 'text/plain', value: textBody }] } } }, 'create']
+          ]);
+          const emailSet = created.methodResponses?.find(x => x[0] === 'Email/set')?.[1];
+          const draftId = emailSet?.created?.draft?.id;
+          if (!draftId) return json(res, 502, { error: 'Stalwart n’a pas créé le brouillon : vérifiez les droits JMAP.' });
+          const submitted = await jmap([
+            ['EmailSubmission/set', { accountId, create: { submission: { emailId: draftId, envelope: { mailFrom: null, rcptTo: [{ email: to }] } } } }, 'submit']
+          ]);
+          const submitSet = submitted.result.methodResponses?.find(x => x[0] === 'EmailSubmission/set')?.[1];
+          if (submitSet?.notCreated?.submission) return json(res, 502, { error: 'Stalwart n’a pas pu soumettre le message.' });
+          return json(res, 201, { sent: true });
+        }
+        if (p === '/api/mail/mailboxes' && req.method === 'GET') {
+          const d = await mailAdmin('GET', '/api/principal?type=individual');
+          return json(res, 200, { mailboxes: Array.isArray(d) ? d : (d.data || d.items || []) });
+        }
+        if (p === '/api/mail/mailboxes' && req.method === 'POST') {
+          const d = await mailJsonBody(), email = String(d.email || '').trim().toLowerCase(), password = String(d.password || '');
+          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json(res, 422, { error: 'Adresse invalide et mot de passe de 12 à 256 caractères requis.' });
+          const r = await mailAdmin('POST', '/api/principal', { type: 'individual', name: email, emails: [email], secrets: [password] });
+          return json(res, 201, { mailbox: r });
+        }
+        if (p.startsWith('/api/mail/mailboxes/') && req.method === 'DELETE') {
+          const name = decodeURIComponent(p.slice('/api/mail/mailboxes/'.length));
+          if (!/^[^\\s/]+@[^\\s/]+$/.test(name) && !/^[a-zA-Z0-9._-]+$/.test(name)) return json(res, 400, { error: 'Identifiant de boîte invalide.' });
+          await mailAdmin('DELETE', '/api/principal/' + encodeURIComponent(name));
+          return json(res, 200, { deleted: true });
+        }
+        if (p === '/api/mail/domains' && req.method === 'GET') {
+          const d = await mailAdmin('GET', '/api/principal?type=domain');
+          return json(res, 200, { domains: Array.isArray(d) ? d : (d.data || d.items || []) });
+        }
+        if (p === '/api/mail/domains' && req.method === 'POST') {
+          const d = await mailJsonBody(), domain = String(d.domain || '').trim().toLowerCase();
+          if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) return json(res, 422, { error: 'Nom de domaine invalide.' });
+          const r = await mailAdmin('POST', '/api/principal', { type: 'domain', name: domain });
+          return json(res, 201, { domain: r });
+        }
+        if (p.startsWith('/api/mail/domains/') && req.method === 'DELETE') {
+          const name = decodeURIComponent(p.slice('/api/mail/domains/'.length));
+          if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(name)) return json(res, 400, { error: 'Nom de domaine invalide.' });
+          await mailAdmin('DELETE', '/api/principal/' + encodeURIComponent(name));
+          return json(res, 200, { deleted: true });
+        }
+        return json(res, 405, { error: 'Méthode non autorisée.' }, { Allow: 'GET, POST, DELETE' });
+      }
       if (p.startsWith('/api/gh/')) {
         const rest = p.slice(7) + url.search;
         if (!/^\/[\w\-./?=&%,:+@]*$/.test(rest) || rest.includes('..')) return json(res, 400, { error: 'chemin refusé' });
@@ -96,7 +189,7 @@ function createServer() {
       if (rel.includes('\0') || !file.startsWith(ROOT + path.sep) || !PUBLIC.has(top) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return json(res, 404, { error: 'introuvable' });
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' });
       fs.createReadStream(file).pipe(res);
-    } catch (e) { json(res, 500, { error: 'Erreur serveur' }); }
+    } catch (e) { json(res, e.status || 500, { error: e.status ? e.message : 'Erreur serveur' }); }
   });
 }
 module.exports = { createServer, sign, unsign, verifySig, notifyBody, checkDns };
