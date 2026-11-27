@@ -118,16 +118,16 @@ function createServer() {
         }
         if (p === '/api/mail/send' && req.method === 'POST') {
           const data = await mailJsonBody(), to = String(data.to || '').trim(), subject = String(data.subject || '').trim(), textBody = String(data.text || ''), from = String(E.STALWART_FROM_ADDRESS || '').trim();
-          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(to) || !subject || !textBody.trim()) return json(res, 422, { error: 'Destinataire, objet et message sont obligatoires.' });
-          if (!from || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from)) return json(res, 503, { error: 'Configurez STALWART_FROM_ADDRESS avec une adresse d’expédition autorisée.' });
+          if (!/^[^ @]+@[^ @]+[.][^ @]+$/.test(to) || !subject || !textBody.trim()) return json(res, 422, { error: 'Destinataire, objet et message sont obligatoires.' });
+          if (!from || !/^[^ @]+@[^ @]+[.][^ @]+$/.test(from)) return json(res, 503, { error: 'Configurez STALWART_FROM_ADDRESS avec une adresse d’expédition autorisée.' });
           if (to.length > 254 || subject.length > 998 || textBody.length > 100000) return json(res, 413, { error: 'Message trop volumineux.' });
           const sr = await fetch(mailBase + '/jmap/session', { headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, Accept: 'application/json' } });
           if (!sr.ok) return json(res, 502, { error: 'Impossible d’ouvrir la session JMAP (' + sr.status + ').' });
           const sess = await sr.json(), accountId = E.STALWART_JMAP_ACCOUNT_ID || Object.keys(sess.accounts || {})[0];
           if (!accountId || !sess.uploadUrl || !sess.apiUrl) return json(res, 502, { error: 'La session JMAP ne fournit pas les URL requises.' });
-          const encSubject = /[^\\x20-\\x7E]/.test(subject) ? '=?UTF-8?B?' + Buffer.from(subject).toString('base64') + '?=' : subject.replace(/[\\r\\n]/g, ' ');
-          const safeBody = textBody.replace(/\\r?\\n/g, '\\r\\n');
-          const rawMail = 'From: ' + from + '\\r\\nTo: ' + to + '\\r\\nSubject: ' + encSubject + '\\r\\nDate: ' + new Date().toUTCString() + '\\r\\nMIME-Version: 1.0\\r\\nContent-Type: text/plain; charset=UTF-8\\r\\nContent-Transfer-Encoding: 8bit\\r\\n\\r\\n' + safeBody + '\\r\\n';
+          const encSubject = [...subject].some(ch => ch.charCodeAt(0) > 126) ? '=?UTF-8?B?' + Buffer.from(subject).toString('base64') + '?=' : subject.replace(/[\r\n]/g, ' ');
+          const safeBody = textBody.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
+          const rawMail = 'From: ' + from + '\r\nTo: ' + to + '\r\nSubject: ' + encSubject + '\r\nDate: ' + new Date().toUTCString() + '\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n' + safeBody + '\r\n';
           const uploadUrl = sess.uploadUrl.replace('{accountId}', encodeURIComponent(accountId));
           const uploaded = await fetch(uploadUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + E.STALWART_JMAP_TOKEN, 'Content-Type': 'message/rfc822' }, body: rawMail });
           const blob = await uploaded.json().catch(() => ({}));
@@ -155,7 +155,7 @@ function createServer() {
         }
         if (p === '/api/mail/mailboxes' && req.method === 'POST') {
           const d = await mailJsonBody(), email = String(d.email || '').trim().toLowerCase(), password = String(d.password || '');
-          if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json(res, 422, { error: 'Adresse invalide et mot de passe de 12 à 256 caractères requis.' });
+          if (!/^[^ @]+@[^ @]+[.][^ @]+$/.test(email) || password.length < 12 || password.length > 256) return json(res, 422, { error: 'Adresse invalide et mot de passe de 12 à 256 caractères requis.' });
           const [local, domain] = email.split('@');
           const dq = await jmap([['x:Domain/query', { filter: { name: domain } }, 'q']]);
           const domainId = dq.result.methodResponses?.find(x => x[0] === 'x:Domain/query')?.[1]?.ids?.[0];
@@ -183,7 +183,7 @@ function createServer() {
         }
         if (p === '/api/mail/domains' && req.method === 'POST') {
           const d = await mailJsonBody(), domain = String(d.domain || '').trim().toLowerCase();
-          if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/.test(domain)) return json(res, 422, { error: 'Nom de domaine invalide.' });
+          if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z]{2,63}$/.test(domain)) return json(res, 422, { error: 'Nom de domaine invalide.' });
           const created = await jmap([['x:Domain/set', { create: { newDomain: { name: domain, aliases: {}, certificateManagement: { '@type': 'Manual' }, dnsManagement: { '@type': 'Manual' }, subAddressing: { '@type': 'Enabled' } } } }, 'set']]);
           const payload = created.result.methodResponses?.find(x => x[0] === 'x:Domain/set')?.[1];
           if (payload?.notCreated?.newDomain) return json(res, 502, { error: 'Stalwart a refusé la création du domaine.' });
