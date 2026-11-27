@@ -94,6 +94,8 @@ async function ghText(path) {
 // elles finissent dans le bundle du site : jamais de secret. Les secrets ne sont jamais injectés.
 const PUBLIC_VAR_RE = "^(VITE|PUBLIC|NEXT_PUBLIC|REACT_APP|GATSBY|NUXT_PUBLIC|ASTRO_PUBLIC)_";
 // La production suit la branche par défaut du dépôt (et non plus une liste figée main/master).
+// Variables Actions reconnues : BUILD_COMMAND, OUTPUT_DIR, NODE_VERSION, INSTALL_COMMAND, ROOT_DIR, SPA_FALLBACK, SCHEDULED_REBUILD.
+// Secret optionnel : NOTIFY_WEBHOOK_URL (Discord ou Slack) pour être alerté d'un échec de production.
 const makeWF = (branch = "main") => [
   "name: Deploy",
   "on:",
@@ -101,6 +103,8 @@ const makeWF = (branch = "main") => [
   `    branches: [${JSON.stringify(branch)}]`,
   "  pull_request:",
   "    types: [opened, reopened, synchronize, closed]",
+  "  schedule:",
+  "    - cron: '0 4 * * *'",
   "  workflow_dispatch:",
   "concurrency: preview-${{ github.ref }}",
   "permissions:",
@@ -108,13 +112,28 @@ const makeWF = (branch = "main") => [
   "  pull-requests: write",
   "jobs:",
   "  deploy:",
+  "    # Le rebuild planifié ne tourne que si la variable SCHEDULED_REBUILD vaut true.",
+  "    if: github.event_name != 'schedule' || vars.SCHEDULED_REBUILD == 'true'",
   "    runs-on: ubuntu-latest",
   "    steps:",
   "      - uses: actions/checkout@v4",
   "      - uses: actions/setup-node@v4",
   "        if: github.event.action != 'closed'",
   "        with:",
-  "          node-version: 22",
+  "          node-version: ${{ vars.NODE_VERSION || '22' }}",
+  "      - uses: oven-sh/setup-bun@v2",
+  "        if: github.event.action != 'closed' && (hashFiles('**/bun.lockb') != '' || hashFiles('**/bun.lock') != '')",
+  "      - name: Cache des dépendances",
+  "        if: github.event.action != 'closed'",
+  "        uses: actions/cache@v4",
+  "        with:",
+  "          path: |",
+  "            ~/.npm",
+  "            ~/.cache/yarn",
+  "            ~/.local/share/pnpm/store",
+  "            ~/.bun/install/cache",
+  "          key: deps-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/pnpm-lock.yaml', '**/yarn.lock', '**/bun.lockb', '**/bun.lock') }}",
+  "          restore-keys: deps-${{ runner.os }}-",
   "      - name: Variables publiques",
   "        if: github.event.action != 'closed'",
   "        env:",
@@ -128,16 +147,30 @@ const makeWF = (branch = "main") => [
   "        env:",
   "          BUILD_COMMAND: ${{ vars.BUILD_COMMAND }}",
   "          OUTPUT_DIR: ${{ vars.OUTPUT_DIR }}",
+  "          INSTALL_COMMAND: ${{ vars.INSTALL_COMMAND }}",
+  "          ROOT_DIR: ${{ vars.ROOT_DIR }}",
+  "          SPA_FALLBACK: ${{ vars.SPA_FALLBACK }}",
   "        run: |",
+  "          ROOT=\"${ROOT_DIR:-.}\"",
   "          DIR=\"$OUTPUT_DIR\"",
+  "          cd \"$ROOT\"",
   "          if [ -f package.json ]; then",
-  "            npm ci || npm install",
+  "            if [ -f pnpm-lock.yaml ]; then PM=pnpm; elif [ -f yarn.lock ]; then PM=yarn; elif [ -f bun.lockb ] || [ -f bun.lock ]; then PM=bun; else PM=npm; fi",
+  "            if [ \"$PM\" = pnpm ] || [ \"$PM\" = yarn ]; then corepack enable; fi",
+  "            if [ -n \"$INSTALL_COMMAND\" ]; then bash -c \"$INSTALL_COMMAND\"",
+  "            elif [ \"$PM\" = pnpm ]; then pnpm install --frozen-lockfile || pnpm install",
+  "            elif [ \"$PM\" = yarn ]; then yarn install --frozen-lockfile || yarn install",
+  "            elif [ \"$PM\" = bun ]; then bun install --frozen-lockfile || bun install",
+  "            else npm ci || npm install; fi",
   "            if [ -n \"$BUILD_COMMAND\" ]; then bash -c \"$BUILD_COMMAND\"",
-  "            elif grep -q '\"build\"' package.json; then npm run build; fi",
+  "            elif grep -q '\"build\"' package.json; then $PM run build; fi",
   "            if [ -z \"$DIR\" ]; then for d in dist build out public _site; do [ -d \"$d\" ] && DIR=\"$d\" && break; done; fi",
   "          fi",
-  "          touch \"${DIR:-.}/.nojekyll\"",
-  "          echo \"dir=${DIR:-.}\" >> \"$GITHUB_OUTPUT\"",
+  "          DIR=\"${DIR:-.}\"",
+  "          if [ \"$SPA_FALLBACK\" = true ] && [ -f \"$DIR/index.html\" ]; then cp \"$DIR/index.html\" \"$DIR/404.html\"; fi",
+  "          touch \"$DIR/.nojekyll\"",
+  "          if [ \"$ROOT\" != . ]; then DIR=\"$ROOT/$DIR\"; fi",
+  "          echo \"dir=$DIR\" >> \"$GITHUB_OUTPUT\"",
   "      - name: Production",
   "        if: github.event_name != 'pull_request'",
   "        uses: JamesIves/github-pages-deploy-action@v4",
@@ -153,6 +186,14 @@ const makeWF = (branch = "main") => [
   "          source-dir: ${{ steps.build.outputs.dir }}",
   "          preview-branch: gh-pages",
   "          umbrella-dir: pr-preview",
+  "      - name: Alerte en cas d'échec",
+  "        if: failure() && github.event_name != 'pull_request'",
+  "        env:",
+  "          WEBHOOK: ${{ secrets.NOTIFY_WEBHOOK_URL }}",
+  "          MSG: \"Échec du déploiement ${{ github.repository }} (${{ github.ref_name }}) : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"",
+  "        run: |",
+  "          [ -n \"$WEBHOOK\" ] || exit 0",
+  "          curl -fsS -X POST -H 'Content-Type: application/json' -d \"$(jq -nc --arg m \"$MSG\" '{content:$m,text:$m}')\" \"$WEBHOOK\" || true",
 ].join("\n") + "\n";
 async function setupAuto(repo, L) {
   const m = await gh(`/repos/${repo}`), br = m.default_branch;
@@ -381,10 +422,33 @@ function dnsCard(domain, owner) {
     toast(d.ok ? "DNS correct ✓" : `DNS incorrect : attendu CNAME ${d.target} (trouvé : ${d.records.join(", ") || "rien"})`, !d.ok);
   })));
 }
+const upsertVar = async (repo, name, value) => { const body = { name, value }; try { await gh(`/repos/${repo}/actions/variables`, { method: "POST", body }); } catch { await gh(`/repos/${repo}/actions/variables/${name}`, { method: "PATCH", body }); } };
+// Réglages de build en formulaire : chaque champ est une variable Actions lue par le workflow (champ vide = variable supprimée).
+function buildCard(repo, vars) {
+  const val = (k) => vars.find((x) => x.name === k)?.value || "";
+  const txt = (k, label, ph) => { const i = h("input", { class: "fe-input", placeholder: ph, value: val(k), "aria-label": label }); return { k, i, get: () => i.value.trim(), row: h("label", { class: "fe-meta" }, label, i) }; };
+  const chk = (k, label) => { const i = h("input", { type: "checkbox", checked: val(k) === "true" }); return { k, i, get: () => (i.checked ? "true" : ""), row: h("label", { class: "fe-meta" }, i, " " + label) }; };
+  const F = [txt("BUILD_COMMAND", "Commande de build", "npm run build"), txt("OUTPUT_DIR", "Dossier de sortie", "dist"), txt("NODE_VERSION", "Version de Node (22 par défaut)", "22"),
+    txt("INSTALL_COMMAND", "Commande d'installation", "détectée : npm, pnpm, yarn ou bun"), txt("ROOT_DIR", "Dossier racine (monorepo)", "."),
+    chk("SPA_FALLBACK", "Application monopage : copier index.html vers 404.html (React Router, Vue Router…)"), chk("SCHEDULED_REBUILD", "Rebuild planifié chaque jour à 4 h UTC (sites qui consomment des données)")];
+  const hook = h("input", { class: "fe-input", type: "password", placeholder: "https://discord.com/api/webhooks/… ou https://hooks.slack.com/…", autocomplete: "off" });
+  return h("div", { class: "fe-card" }, h("b", {}, "Réglages de build"), h("span", { class: "fe-meta" }, "Lus par le workflow Deploy à chaque build. Pour un projet existant, clique ensuite sur « Déploiement auto » (une seule fois) afin de mettre le workflow à jour."),
+    ...F.map((f) => f.row),
+    h("div", { class: "fe-bar", style: "margin:0" }, btn("Enregistrer les réglages", "save", () => act(async () => {
+      for (const f of F) { const v = f.get(), had = val(f.k); if (v === had) continue; if (v) await upsertVar(repo, f.k, v); else if (had) await gh(`/repos/${repo}/actions/variables/${f.k}`, { method: "DELETE" }); }
+      render(S.cur);
+    }, "Réglages enregistrés"), "primary")),
+    h("b", {}, "Alertes d'échec"), h("span", { class: "fe-meta" }, "Webhook Discord ou Slack appelé par le workflow quand un déploiement de production échoue, même onglet fermé. Stocké comme secret chiffré (NOTIFY_WEBHOOK_URL)."),
+    h("div", { class: "fe-bar", style: "margin:0" }, hook, btn("Enregistrer le webhook", "bell", () => act(async () => {
+      const u = hook.value.trim(); if (!/^https:\/\//.test(u)) throw new Error("URL de webhook https requise.");
+      await sealSecret(repo, "NOTIFY_WEBHOOK_URL", u); hook.value = "";
+    }, "Webhook enregistré"), "primary"),
+    btn("Supprimer le webhook", "trash-2", () => act(() => gh(`/repos/${repo}/actions/secrets/NOTIFY_WEBHOOK_URL`, { method: "DELETE" }), "Webhook supprimé"))));
+}
 async function vVars(root) {
-  if (cur()) root.append(secretsCard(cur()));
   const repo = cur(); if (!repo) return root.append(h("div", { class: "fe-empty" }, "Choisis un projet."));
   const d = await gh(`/repos/${repo}/actions/variables?per_page=100`);
+  root.append(buildCard(repo, d.variables), secretsCard(repo));
   const n = h("input", { class: "fe-input", placeholder: "NOM" }), v = h("input", { class: "fe-input", placeholder: "valeur" });
   root.append(h("div", { class: "fe-card" }, h("div", { class: "fe-bar", style: "margin:0" }, n, v, btn("Ajouter / mettre à jour", "plus", () => act(async () => {
     const body = { name: n.value.trim(), value: v.value };
